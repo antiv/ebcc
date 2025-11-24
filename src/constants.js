@@ -41,7 +41,7 @@ const EBCC_MAPPINGS = {
         "popisivac": ["Popisivač", "Popisivac", "popisivac"]
     },
     naturalist: {
-        "Latin name": ["Naučni naziv", "Latin name", "Naucni naziv"],
+        "species": ["Naučni naziv", "Latin name", "Naucni naziv", "species"],
         "Date": ["Datum", "Date"],
         "Day": ["Dan", "Day"],
         "Month": ["Mesec", "Month"],

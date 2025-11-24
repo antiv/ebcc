@@ -70,7 +70,7 @@ export const DEFAULT_MAPPINGS = APP_MODE === 'biodata' ? BIODATA_MAPPINGS : EBCC
 
 export const PAGE_SIZE = 20;
 
-export const INITIAL_SCHEMA = `
+const EBCC_SCHEMA = `
 -- bregunice definition
 
 CREATE TABLE IF NOT EXISTS bregunice (
@@ -140,3 +140,10 @@ CREATE TABLE IF NOT EXISTS shumske (
     popisivaci VARCHAR(50)          -- Original: "Popisivači"
 );
 `;
+
+const BIODATA_SCHEMA = `
+-- No default tables for biodata mode
+-- Users will create their own tables dynamically
+`;
+
+export const INITIAL_SCHEMA = APP_MODE === 'biodata' ? BIODATA_SCHEMA : EBCC_SCHEMA;

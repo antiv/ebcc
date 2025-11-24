@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import initSqlJs from 'sql.js';
+import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import Papa from 'papaparse';
 import { DEFAULT_MAPPINGS, INITIAL_SCHEMA } from './constants';
 import DataTable from './components/DataTable';
@@ -30,7 +31,7 @@ function App() {
     useEffect(() => {
         const init = async () => {
             try {
-                const SQL = await initSqlJs({ locateFile: file => `/${file}` });
+                const SQL = await initSqlJs({ locateFile: () => sqlWasmUrl });
                 setSqlInstance(SQL);
             } catch (err) { setError("Greška pri učitavanju SQL biblioteke: " + err.message); }
         };

@@ -1,4 +1,4 @@
-export const DEFAULT_MAPPINGS = {
+const EBCC_MAPPINGS = {
     shumske: {
         "ime_tacke": ["Ime tačke", "Ime tacke", "ime_tacke"],
         "latituda": ["Latituda", "Lat", "latituda"],
@@ -60,6 +60,13 @@ export const DEFAULT_MAPPINGS = {
         "Observer": ["Posmatrači", "Posmatraci", "Observer"]
     }
 };
+
+const BIODATA_MAPPINGS = {};
+
+// Check environment mode - default to 'ebcc' for backward compatibility
+const APP_MODE = import.meta.env.VITE_APP_MODE || 'ebcc';
+
+export const DEFAULT_MAPPINGS = APP_MODE === 'biodata' ? BIODATA_MAPPINGS : EBCC_MAPPINGS;
 
 export const PAGE_SIZE = 20;
 

@@ -5,6 +5,9 @@ import Papa from 'papaparse';
 import { DEFAULT_MAPPINGS, INITIAL_SCHEMA } from './constants';
 import DataTable from './components/DataTable';
 
+// Get APP_MODE for filename generation
+const APP_MODE = import.meta.env.VITE_APP_MODE || 'ebcc';
+
 function App() {
     const [db, setDb] = useState(null);
     const [error, setError] = useState(null);
@@ -432,7 +435,28 @@ Da li sigurno želite da nastavite uvoz?`)) {
         });
     };
 
-    const handleDownloadDb = () => { if (!db) return; const data = db.export(); const blob = new Blob([data], { type: 'application/x-sqlite3' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = fileName || 'database_updated.db'; a.click(); };
+    const handleDownloadDb = () => {
+        if (!db) return;
+
+        // Generate filename: {mode}_ddmmyyyy_hhmm.db
+        const now = new Date();
+        const day = String(now.getDate()).padStart(2, '0');
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const year = now.getFullYear();
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const dateStr = `${day}${month}${year}`;
+        const timeStr = `${hours}${minutes}`;
+        const filename = `${APP_MODE}_${dateStr}_${timeStr}.db`;
+
+        const data = db.export();
+        const blob = new Blob([data], { type: 'application/x-sqlite3' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+    };
 
     // Ažurirana execQuery da prihvata SQL argument
     const execQuery = (sqlToRun = query) => {

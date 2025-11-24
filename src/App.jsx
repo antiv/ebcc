@@ -229,12 +229,36 @@ Da li ste sigurni da želite da nastavite?`)) return;
         }
     };
 
-    useEffect(() => { if (mappings && settingsTable) setTempMappings(JSON.parse(JSON.stringify(mappings[settingsTable] || {}))); }, [mappings, settingsTable]);
-    const handleMappingChange = (dbCol, val) => { setTempMappings(prev => ({ ...prev, [dbCol]: val.split(",").map(s => s.trim()).filter(s => s !== "") })); };
+    useEffect(() => {
+        if (mappings && settingsTable) {
+            const currentMappings = mappings[settingsTable] || {};
+            // Convert arrays to comma-separated strings for editing
+            const stringMappings = {};
+            Object.keys(currentMappings).forEach(col => {
+                const val = currentMappings[col];
+                stringMappings[col] = Array.isArray(val) ? val.join(", ") : val;
+            });
+            setTempMappings(stringMappings);
+        }
+    }, [mappings, settingsTable]);
+    const handleMappingChange = (dbCol, val) => {
+        setTempMappings(prev => ({ ...prev, [dbCol]: val }));
+    };
     const saveSettings = () => {
         if (!db) return;
         try {
-            const newMappings = { ...mappings, [settingsTable]: tempMappings };
+            // Convert string values back to arrays
+            const processedMappings = {};
+            Object.keys(tempMappings).forEach(col => {
+                const val = tempMappings[col];
+                if (typeof val === 'string') {
+                    processedMappings[col] = val.split(",").map(s => s.trim()).filter(s => s !== "");
+                } else {
+                    processedMappings[col] = val;
+                }
+            });
+
+            const newMappings = { ...mappings, [settingsTable]: processedMappings };
             setMappings(newMappings);
             db.exec("BEGIN TRANSACTION");
             const stmt = db.prepare("UPDATE app_config SET value = ? WHERE key = 'mappings'");
@@ -642,7 +666,7 @@ Da li sigurno želite da nastavite uvoz?`)) {
                                 <table className="min-w-full divide-y divide-gray-200 text-sm"><thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider w-1/4">Kolona u Bazi</th><th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">CSV Alias-i (odvojeni zarezom)</th></tr></thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
                                         {Object.keys(tempMappings).map((col) => (
-                                            <tr key={col} className="hover:bg-gray-50"><td className="px-6 py-4 font-mono text-blue-700 font-medium">{col}</td><td className="px-6 py-2"><input type="text" className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" value={tempMappings[col].join(", ")} onChange={(e) => handleMappingChange(col, e.target.value)} /></td></tr>
+                                            <tr key={col} className="hover:bg-gray-50"><td className="px-6 py-4 font-mono text-blue-700 font-medium">{col}</td><td className="px-6 py-2"><input type="text" className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" value={tempMappings[col] || ""} onChange={(e) => handleMappingChange(col, e.target.value)} /></td></tr>
                                         ))}
                                     </tbody>
                                 </table>

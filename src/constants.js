@@ -41,7 +41,7 @@ const EBCC_MAPPINGS = {
         "popisivac": ["Popisivač", "Popisivac", "popisivac"]
     },
     naturalist: {
-        "species": ["Naučni naziv", "Latin name", "Naucni naziv", "species"],
+        "species": ["Naučni naziv", "Latin name", "Naucni naziv", "species", "Nau?ni naziv"],
         "Date": ["Datum", "Date"],
         "Day": ["Dan", "Day"],
         "Month": ["Mesec", "Month"],
@@ -57,7 +57,7 @@ const EBCC_MAPPINGS = {
         "Details": ["Detalji", "Details"],
         "Altas code": ["Atlas kod", "Altas code"],
         "Comment": ["Komentar", "Comment"],
-        "Observer": ["Posmatrači", "Posmatraci", "Observer"]
+        "Observer": ["Posmatrači", "Posmatraci", "Observer", "Posmatra?i"]
     }
 };
 

@@ -27,6 +27,8 @@ function App() {
     const [queryResults, setQueryResults] = useState(null);
     const [lastUsedFile, setLastUsedFile] = useState(localStorage.getItem("lastBioDb") || "");
     const [dbTables, setDbTables] = useState([]); // List of all tables
+    const [newTableFile, setNewTableFile] = useState(null);
+    const [newTableName, setNewTableName] = useState("");
 
     useEffect(() => {
         const init = async () => {
@@ -238,10 +240,12 @@ Da li ste sigurni da želite da nastavite?`)) return;
     useEffect(() => { if (activeTab === 'viewer') fetchViewerData(); }, [activeTab, viewerTable, db]);
 
     const handleCsvUpload = (e) => { setCsvFile(e.target.files[0]); setSuccessMsg(null); setError(null); };
-    const processImport = () => {
-        if (!db || !csvFile) return;
-        const checkRes = db.exec(`SELECT count(*) as cnt FROM app_import_history WHERE filename = '${csvFile.name}' AND target_table = '${targetTable}'`);
-        if (checkRes[0].values[0][0] > 0) { setError(`UPOZORENJE: Fajl '${csvFile.name}' je već uvezen u tabelu '${targetTable}'!`); return; }
+    const processImport = (overrideTableName = null, overrideMappings = null) => {
+        const tableToUse = overrideTableName || targetTable;
+        const mappingsToUse = overrideMappings || mappings;
+        if (!db || !csvFile || !tableToUse) return;
+        const checkRes = db.exec(`SELECT count(*) as cnt FROM app_import_history WHERE filename = '${csvFile.name}' AND target_table = '${tableToUse}'`);
+        if (checkRes[0].values[0][0] > 0) { setError(`UPOZORENJE: Fajl '${csvFile.name}' je već uvezen u tabelu '${tableToUse}'!`); return; }
         setIsProcessing(true);
         Papa.parse(csvFile, {
             header: true, skipEmptyLines: true,
@@ -259,7 +263,7 @@ Da li ste sigurni da želite da nastavite?`)) return;
                     data.forEach(row => { stmt.run(headers.map(h => row[h])); });
                     stmt.free();
 
-                    const targetMap = mappings[targetTable];
+                    const targetMap = mappingsToUse[tableToUse];
                     let targetCols = [], selectCols = [];
                     if (!targetMap) throw new Error("Mapiranje za ovu tabelu nije definisano.");
                     for (const [dbCol, csvOptions] of Object.entries(targetMap)) {
@@ -273,7 +277,7 @@ Da li ste sigurni da želite da nastavite?`)) return;
                     const matchedCols = targetCols.length;
                     const matchPercent = Math.round((matchedCols / totalTargetCols) * 100);
                     if (matchPercent < 75) {
-                        if (!confirm(`UPOZORENJE: Detektovano je poklapanje samo ${matchedCols} od ${totalTargetCols} kolona (${matchPercent}%) za tabelu '${targetTable}'.
+                        if (!confirm(`UPOZORENJE: Detektovano je poklapanje samo ${matchedCols} od ${totalTargetCols} kolona (${matchPercent}%) za tabelu '${tableToUse}'.
 
 Velika je verovatnoća da pokušavate uvoz pogrešnog fajla ili da mapiranja nisu ispravna.
 
@@ -282,15 +286,16 @@ Da li sigurno želite da nastavite uvoz?`)) {
                         }
                     }
 
-                    const finalSql = `INSERT INTO ${targetTable} (${targetCols.join(", ")}) SELECT ${selectCols.join(", ")} FROM "${tempTableName}"`;
+                    const finalSql = `INSERT INTO ${tableToUse} (${targetCols.join(", ")}) SELECT ${selectCols.join(", ")} FROM "${tempTableName}"`;
                     db.exec(finalSql);
-                    db.run(`INSERT INTO app_import_history (filename, target_table, row_count, backup_table_name) VALUES (?, ?, ?, ?)`, [csvFile.name, targetTable, data.length, tempTableName]);
+                    db.run(`INSERT INTO app_import_history (filename, target_table, row_count, backup_table_name) VALUES (?, ?, ?, ?)`, [csvFile.name, tableToUse, data.length, tempTableName]);
 
                     db.exec("COMMIT"); // Commit at the very end
 
-                    setSuccessMsg(`Uspešno uvezeno ${data.length} redova iz '${csvFile.name}' u tabelu '${targetTable}'.`);
+                    setSuccessMsg(`Uspešno uvezeno ${data.length} redova iz '${csvFile.name}' u tabelu '${tableToUse}'.`);
                     refreshImportLog(db);
                     setCsvFile(null);
+                    setNewTableName(""); // Clear new table name after successful import
                 } catch (err) {
                     db.exec("ROLLBACK"); // Rollback on any error
                     setError("Greška pri importu: " + err.message);
@@ -299,6 +304,115 @@ Da li sigurno želite da nastavite uvoz?`)) {
                 }
             },
             error: (err) => { setError("Greška pri čitanju CSV-a: " + err.message); setIsProcessing(false); }
+        });
+    };
+
+    const handleImport = () => {
+        if (!csvFile) {
+            setError("Molimo izaberite CSV fajl.");
+            return;
+        }
+
+        if (targetTable === "__NEW_TABLE__") {
+            if (!newTableName) {
+                setError("Molimo unesite naziv nove tabele.");
+                return;
+            }
+            if (!/^[a-zA-Z0-9_]+$/.test(newTableName)) {
+                setError("Naziv tabele sme sadržati samo slova, brojeve i donju crtu.");
+                return;
+            }
+            // Create table first, then import
+            handleTableCreationFromCsv(true); // true = proceed to import after creation
+        } else {
+            // Just import
+            processImport();
+        }
+    };
+
+    const handleTableCreationFromCsv = (proceedToImport = false) => {
+        // Use csvFile instead of newTableFile since we merged the inputs
+        const fileToParse = csvFile;
+
+        if (!fileToParse || !newTableName) {
+            setError("Molimo izaberite fajl i unesite naziv tabele.");
+            return;
+        }
+
+        // Basic validation for table name (alphanumeric + underscore)
+        if (!/^[a-zA-Z0-9_]+$/.test(newTableName)) {
+            setError("Naziv tabele sme sadržati samo slova, brojeve i donju crtu.");
+            return;
+        }
+
+        Papa.parse(fileToParse, {
+            header: true,
+            skipEmptyLines: true,
+            complete: (results) => {
+                if (results.data.length === 0) {
+                    setError("CSV fajl je prazan.");
+                    return;
+                }
+
+                const headers = results.meta.fields;
+                if (!headers || headers.length === 0) {
+                    setError("Nije moguće detektovati kolone u CSV fajlu.");
+                    return;
+                }
+
+                // Infer types from the first row (or first few rows)
+                const firstRow = results.data[0];
+                const columnDefs = headers.map(header => {
+                    const val = firstRow[header];
+                    let type = "TEXT";
+                    if (val !== null && val !== undefined && val !== "") {
+                        if (!isNaN(Number(val))) {
+                            if (Number.isInteger(Number(val))) type = "INTEGER";
+                            else type = "REAL";
+                        }
+                    }
+                    // Sanitize column name
+                    const safeColName = header.trim().replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
+                    return { original: header, name: safeColName, type };
+                });
+
+                // Create Table SQL
+                const createTableSql = `CREATE TABLE IF NOT EXISTS ${newTableName} (${columnDefs.map(c => `${c.name} ${c.type}`).join(", ")});`;
+
+                try {
+                    db.exec(createTableSql);
+
+                    // Update Mappings
+                    const newMapping = {};
+                    columnDefs.forEach(c => {
+                        newMapping[c.name] = [c.original, c.name]; // Default mapping
+                    });
+
+                    const updatedMappings = { ...mappings, [newTableName]: newMapping };
+                    setMappings(updatedMappings);
+
+                    // Persist Mappings
+                    db.exec("BEGIN TRANSACTION");
+                    const stmt = db.prepare("UPDATE app_config SET value = ? WHERE key = 'mappings'");
+                    stmt.run([JSON.stringify(updatedMappings)]);
+                    stmt.free();
+                    db.exec("COMMIT");
+
+                    if (proceedToImport) {
+                        // Pass the updated mappings directly to avoid state race condition
+                        processImport(newTableName, updatedMappings);
+                    } else {
+                        setSuccessMsg(`Tabela '${newTableName}' je uspešno kreirana!`);
+                        setNewTableName("");
+                    }
+                    fetchDbTables(); // Refresh table list
+                } catch (err) {
+                    setError("Greška pri kreiranju tabele: " + err.message);
+                }
+            },
+            error: (err) => {
+                setError("Greška pri parsiranju CSV-a: " + err.message);
+            }
         });
     };
 
@@ -355,7 +469,7 @@ Da li sigurno želite da nastavite uvoz?`)) {
 
                 {activeTab === 'dashboard' && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {['shumske', 'naturalist', 'bregunice'].map(tbl => (
+                        {Object.keys(mappings).map(tbl => (
                             <div key={tbl} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:border-blue-300 transition group">
                                 <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-gray-800 capitalize group-hover:text-blue-600">{tbl}</h3><span className="bg-blue-50 text-blue-600 py-1 px-3 rounded-full text-xs font-bold">Tabela</span></div>
                                 <p className="text-gray-500 text-sm mb-4">Glavna tabela podataka.</p>
@@ -370,7 +484,7 @@ Da li sigurno želite da nastavite uvoz?`)) {
                         <div className="mb-4 flex items-center gap-3">
                             <label className="text-sm font-medium text-gray-700">Izaberi Tabelu:</label>
                             <select value={viewerTable} onChange={(e) => { setViewerTable(e.target.value); }} className="p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm">
-                                <option value="shumske">Shumske</option><option value="naturalist">Naturalist</option><option value="bregunice">Bregunice</option>
+                                {Object.keys(mappings).map(t => <option key={t} value={t}>{t}</option>)}
                             </select>
                         </div>
                         <DataTable data={viewerData} columns={viewerColumns} title={`Pregled: ${viewerTable}`} enableMapsExport={true} className="flex-1 shadow-sm border border-gray-200 rounded-xl" stickyHeader={true} />
@@ -379,19 +493,48 @@ Da li sigurno želite da nastavite uvoz?`)) {
 
                 {activeTab === 'import' && (
                     <div className="flex flex-col gap-8">
-                        <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 animate-fade-in">
+                        <div>
                             <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
                                 <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
                                 1. Uvoz novih podataka (CSV)
                             </h2>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div><label className="block text-sm font-medium text-gray-700 mb-2">Izaberi CSV Fajl</label><input type="file" accept=".csv" onChange={handleCsvUpload} className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition bg-gray-50 rounded-lg border border-gray-200" /></div>
-                                {csvFile && (
-                                    <div className="animate-fade-in">
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">Izaberi Ciljnu Tabelu</label>
-                                        <select value={targetTable} onChange={(e) => setTargetTable(e.target.value)} className="w-full p-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none mb-4"><option value="shumske">Shumske</option><option value="naturalist">Naturalist</option><option value="bregunice">Bregunice</option></select>
-                                        <button onClick={processImport} disabled={isProcessing} className={`w-full py-2 px-4 rounded-lg font-bold text-white shadow transition transform active:scale-95 ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>{isProcessing ? 'Procesiranje...' : 'Uvezi Podatke'}</button>
+
+                            <div className="mb-6 p-6 bg-white rounded-xl border border-gray-200 shadow-sm">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    {/* Left Column: File Selection */}
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Izaberi CSV Fajl</label>
+                                        <div className="flex items-center gap-3">
+                                            <label className="cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold py-2 px-4 rounded-lg border border-blue-200 transition text-sm">
+                                                Choose File
+                                                <input type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
+                                            </label>
+                                            <span className="text-sm text-gray-600 truncate max-w-[200px]">{csvFile ? csvFile.name : "Nije izabran fajl"}</span>
+                                        </div>
                                     </div>
-                                )}
+
+                                    {/* Right Column: Table Selection & Action */}
+                                    <div className="flex flex-col gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Ciljna Tabela</label>
+                                            <select value={targetTable} onChange={(e) => setTargetTable(e.target.value)} className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm shadow-sm">
+                                                {Object.keys(mappings).map(t => <option key={t} value={t}>{t}</option>)}
+                                                <option value="__NEW_TABLE__" className="font-bold text-blue-600">+ Nova Tabela...</option>
+                                            </select>
+                                        </div>
+
+                                        {targetTable === "__NEW_TABLE__" && (
+                                            <div className="animate-fade-in">
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">Naziv nove tabele (npr. leptiri)</label>
+                                                <input type="text" value={newTableName} onChange={(e) => setNewTableName(e.target.value)} placeholder="unesi naziv..." className="w-full p-2.5 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm bg-blue-50" />
+                                            </div>
+                                        )}
+
+                                        <button onClick={handleImport} disabled={isProcessing} className={`mt-2 w-full py-3 px-4 rounded-lg font-bold text-white shadow-md transition transform active:scale-95 ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                            {isProcessing ? 'Procesiranje...' : 'Uvezi Podatke'}
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div>
@@ -428,7 +571,7 @@ Da li sigurno želite da nastavite uvoz?`)) {
                                 columns={["Naziv Tabele", "Tip"]}
                                 data={dbTables.map(tbl => {
                                     let type = "Ostalo";
-                                    if (['shumske', 'naturalist', 'bregunice'].includes(tbl)) type = "Glavna";
+                                    if (Object.keys(mappings).includes(tbl)) type = "Glavna";
                                     else if (tbl.startsWith('import_')) type = "Backup";
                                     else if (tbl === 'app_import_history' || tbl === 'app_config' || tbl === 'sqlite_sequence') type = "Sistemska";
                                     return [tbl, type];
@@ -452,7 +595,9 @@ Da li sigurno želite da nastavite uvoz?`)) {
                     <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                         <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center"><h2 className="text-lg font-bold text-gray-800">Podešavanje Mapiranja Kolona</h2><button onClick={saveSettings} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg> Sačuvaj Podešavanja</button></div>
                         <div className="p-6">
-                            <div className="mb-6"><label className="block text-sm font-medium text-gray-700 mb-2">Izaberi Tabelu za Mapiranje:</label><select value={settingsTable} onChange={(e) => setSettingsTable(e.target.value)} className="w-full md:w-1/3 p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"><option value="shumske">Shumske</option><option value="naturalist">Naturalist</option><option value="bregunice">Bregunice</option></select><p className="text-xs text-gray-500 mt-2">Ovde definišeš koji se nazivi kolona iz CSV fajla mapiraju u koju kolonu baze. Odvoji nazive zarezom.</p></div>
+                            <div className="mb-6"><label className="block text-sm font-medium text-gray-700 mb-2">Izaberi Tabelu za Mapiranje:</label><select value={settingsTable} onChange={(e) => setSettingsTable(e.target.value)} className="w-full md:w-1/3 p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm">
+                                {Object.keys(mappings).map(t => <option key={t} value={t}>{t}</option>)}
+                            </select><p className="text-xs text-gray-500 mt-2">Ovde definišeš koji se nazivi kolona iz CSV fajla mapiraju u koju kolonu baze. Odvoji nazive zarezom.</p></div>
                             <div className="overflow-hidden border border-gray-200 rounded-lg">
                                 <table className="min-w-full divide-y divide-gray-200 text-sm"><thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider w-1/4">Kolona u Bazi</th><th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">CSV Alias-i (odvojeni zarezom)</th></tr></thead>
                                     <tbody className="bg-white divide-y divide-gray-200">

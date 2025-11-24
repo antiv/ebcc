@@ -46,6 +46,22 @@ function App() {
         return () => window.removeEventListener('beforeunload', handleBeforeUnload);
     }, [db]);
 
+    // Handle empty mappings case (biodata mode) - auto-select "New Table"
+    useEffect(() => {
+        const mappingKeys = Object.keys(mappings);
+        if (mappingKeys.length === 0) {
+            // No default tables, set all selectors to "New Table" option
+            setTargetTable("__NEW_TABLE__");
+            setViewerTable("__NEW_TABLE__");
+            setSettingsTable("__NEW_TABLE__");
+        } else if (!mappingKeys.includes(targetTable)) {
+            // Current selection doesn't exist, select first available
+            setTargetTable(mappingKeys[0]);
+            if (!mappingKeys.includes(viewerTable)) setViewerTable(mappingKeys[0]);
+            if (!mappingKeys.includes(settingsTable)) setSettingsTable(mappingKeys[0]);
+        }
+    }, [mappings]);
+
     const initializeDatabase = (newDb) => {
         // 0. Init Main Tables if not exist
         try {

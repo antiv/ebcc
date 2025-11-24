@@ -7,6 +7,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "vite",
+    "dev:ebcc": "vite --mode ebcc",
+    "dev:biodata": "vite --mode biodata",
     "build": "vite build",
     "build:ebcc": "vite build --mode ebcc",
     "build:biodata": "vite build --mode biodata",

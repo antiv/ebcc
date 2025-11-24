@@ -65,6 +65,26 @@ function App() {
         }
     }, [mappings]);
 
+    // Auto-dismiss success messages after 5 seconds
+    useEffect(() => {
+        if (successMsg) {
+            const timer = setTimeout(() => {
+                setSuccessMsg(null);
+            }, 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [successMsg]);
+
+    // Auto-dismiss error messages after 5 seconds
+    useEffect(() => {
+        if (error) {
+            const timer = setTimeout(() => {
+                setError(null);
+            }, 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [error]);
+
     const initializeDatabase = (newDb) => {
         // 0. Init Main Tables if not exist
         try {
@@ -283,6 +303,42 @@ Da li ste sigurni da želite da nastavite?`)) return;
     useEffect(() => { if (activeTab === 'viewer') fetchViewerData(); }, [activeTab, viewerTable, db]);
 
     const handleCsvUpload = (e) => { setCsvFile(e.target.files[0]); setSuccessMsg(null); setError(null); };
+
+    // Helper function to preprocess CSV and find the header line
+    const preprocessCsv = (file, callback) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const text = e.target.result;
+            const lines = text.split(/\r?\n/);
+
+            // Find the first line that looks like a CSV header
+            // Must have multiple non-empty values separated by commas
+            let headerLineIndex = 0;
+            for (let i = 0; i < Math.min(10, lines.length); i++) {
+                const line = lines[i].trim();
+
+                // Skip completely empty lines
+                if (!line) continue;
+
+                // Split by comma and count non-empty values
+                const values = line.split(',').map(v => v.trim().replace(/^"(.*)"$/, '$1'));
+                const nonEmptyCount = values.filter(v => v.length > 0).length;
+
+                // A valid header should have at least 3 non-empty column names
+                // and most values should be non-empty (at least 50%)
+                if (nonEmptyCount >= 3 && nonEmptyCount / values.length >= 0.5) {
+                    headerLineIndex = i;
+                    break;
+                }
+            }
+
+            // Create cleaned CSV starting from header line
+            const cleanedCsv = lines.slice(headerLineIndex).join('\n');
+            const blob = new Blob([cleanedCsv], { type: 'text/csv' });
+            callback(blob);
+        };
+        reader.readAsText(file);
+    };
     const processImport = (overrideTableName = null, overrideMappings = null) => {
         const tableToUse = overrideTableName || targetTable;
         const mappingsToUse = overrideMappings || mappings;
@@ -290,63 +346,65 @@ Da li ste sigurni da želite da nastavite?`)) return;
         const checkRes = db.exec(`SELECT count(*) as cnt FROM app_import_history WHERE filename = '${csvFile.name}' AND target_table = '${tableToUse}'`);
         if (checkRes[0].values[0][0] > 0) { setError(`UPOZORENJE: Fajl '${csvFile.name}' je već uvezen u tabelu '${tableToUse}'!`); return; }
         setIsProcessing(true);
-        Papa.parse(csvFile, {
-            header: true, skipEmptyLines: true,
-            complete: function (results) {
-                try {
-                    db.exec("BEGIN TRANSACTION"); // Start transaction right away
-                    const data = results.data;
-                    const headers = results.meta.fields;
-                    const tempTableName = "import_" + csvFile.name.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 30) + "_" + Date.now(); // Unique name
+        preprocessCsv(csvFile, (cleanedFile) => {
+            Papa.parse(cleanedFile, {
+                header: true, skipEmptyLines: true,
+                complete: function (results) {
+                    try {
+                        db.exec("BEGIN TRANSACTION"); // Start transaction right away
+                        const data = results.data;
+                        const headers = results.meta.fields;
+                        const tempTableName = "import_" + csvFile.name.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 30) + "_" + Date.now(); // Unique name
 
-                    const createCols = headers.map(h => `"${h}" TEXT`).join(", ");
-                    db.exec(`CREATE TABLE "${tempTableName}" (${createCols})`);
+                        const createCols = headers.map(h => `"${h}" TEXT`).join(", ");
+                        db.exec(`CREATE TABLE "${tempTableName}" (${createCols})`);
 
-                    const stmt = db.prepare(`INSERT INTO "${tempTableName}" VALUES (${headers.map(() => '?').join(',')})`);
-                    data.forEach(row => { stmt.run(headers.map(h => row[h])); });
-                    stmt.free();
+                        const stmt = db.prepare(`INSERT INTO "${tempTableName}" VALUES (${headers.map(() => '?').join(',')})`);
+                        data.forEach(row => { stmt.run(headers.map(h => row[h])); });
+                        stmt.free();
 
-                    const targetMap = mappingsToUse[tableToUse];
-                    let targetCols = [], selectCols = [];
-                    if (!targetMap) throw new Error("Mapiranje za ovu tabelu nije definisano.");
-                    for (const [dbCol, csvOptions] of Object.entries(targetMap)) {
-                        const match = headers.find(h => csvOptions.includes(h));
-                        if (match) { targetCols.push(`"${dbCol}"`); selectCols.push(`"${match}"`); }
-                    }
-                    if (targetCols.length === 0) throw new Error("Nije pronađena nijedna odgovarajuća kolona za mapiranje!");
+                        const targetMap = mappingsToUse[tableToUse];
+                        let targetCols = [], selectCols = [];
+                        if (!targetMap) throw new Error("Mapiranje za ovu tabelu nije definisano.");
+                        for (const [dbCol, csvOptions] of Object.entries(targetMap)) {
+                            const match = headers.find(h => csvOptions.includes(h));
+                            if (match) { targetCols.push(`"${dbCol}"`); selectCols.push(`"${match}"`); }
+                        }
+                        if (targetCols.length === 0) throw new Error("Nije pronađena nijedna odgovarajuća kolona za mapiranje!");
 
-                    // VALIDACIJA
-                    const totalTargetCols = Object.keys(targetMap).length;
-                    const matchedCols = targetCols.length;
-                    const matchPercent = Math.round((matchedCols / totalTargetCols) * 100);
-                    if (matchPercent < 75) {
-                        if (!confirm(`UPOZORENJE: Detektovano je poklapanje samo ${matchedCols} od ${totalTargetCols} kolona (${matchPercent}%) za tabelu '${tableToUse}'.
+                        // VALIDACIJA
+                        const totalTargetCols = Object.keys(targetMap).length;
+                        const matchedCols = targetCols.length;
+                        const matchPercent = Math.round((matchedCols / totalTargetCols) * 100);
+                        if (matchPercent < 75) {
+                            if (!confirm(`UPOZORENJE: Detektovano je poklapanje samo ${matchedCols} od ${totalTargetCols} kolona (${matchPercent}%) za tabelu '${tableToUse}'.
 
 Velika je verovatnoća da pokušavate uvoz pogrešnog fajla ili da mapiranja nisu ispravna.
 
 Da li sigurno želite da nastavite uvoz?`)) {
-                            throw new Error("Uvoz otkazan od strane korisnika (loše poklapanje kolona).");
+                                throw new Error("Uvoz otkazan od strane korisnika (loše poklapanje kolona).");
+                            }
                         }
+
+                        const finalSql = `INSERT INTO ${tableToUse} (${targetCols.join(", ")}) SELECT ${selectCols.join(", ")} FROM "${tempTableName}"`;
+                        db.exec(finalSql);
+                        db.run(`INSERT INTO app_import_history (filename, target_table, row_count, backup_table_name) VALUES (?, ?, ?, ?)`, [csvFile.name, tableToUse, data.length, tempTableName]);
+
+                        db.exec("COMMIT"); // Commit at the very end
+
+                        setSuccessMsg(`Uspešno uvezeno ${data.length} redova iz '${csvFile.name}' u tabelu '${tableToUse}'.`);
+                        refreshImportLog(db);
+                        setCsvFile(null);
+                        setNewTableName(""); // Clear new table name after successful import
+                    } catch (err) {
+                        db.exec("ROLLBACK"); // Rollback on any error
+                        setError("Greška pri importu: " + err.message);
+                    } finally {
+                        setIsProcessing(false);
                     }
-
-                    const finalSql = `INSERT INTO ${tableToUse} (${targetCols.join(", ")}) SELECT ${selectCols.join(", ")} FROM "${tempTableName}"`;
-                    db.exec(finalSql);
-                    db.run(`INSERT INTO app_import_history (filename, target_table, row_count, backup_table_name) VALUES (?, ?, ?, ?)`, [csvFile.name, tableToUse, data.length, tempTableName]);
-
-                    db.exec("COMMIT"); // Commit at the very end
-
-                    setSuccessMsg(`Uspešno uvezeno ${data.length} redova iz '${csvFile.name}' u tabelu '${tableToUse}'.`);
-                    refreshImportLog(db);
-                    setCsvFile(null);
-                    setNewTableName(""); // Clear new table name after successful import
-                } catch (err) {
-                    db.exec("ROLLBACK"); // Rollback on any error
-                    setError("Greška pri importu: " + err.message);
-                } finally {
-                    setIsProcessing(false);
-                }
-            },
-            error: (err) => { setError("Greška pri čitanju CSV-a: " + err.message); setIsProcessing(false); }
+                },
+                error: (err) => { setError("Greška pri čitanju CSV-a: " + err.message); setIsProcessing(false); }
+            });
         });
     };
 
@@ -388,74 +446,76 @@ Da li sigurno želite da nastavite uvoz?`)) {
             return;
         }
 
-        Papa.parse(fileToParse, {
-            header: true,
-            skipEmptyLines: true,
-            complete: (results) => {
-                if (results.data.length === 0) {
-                    setError("CSV fajl je prazan.");
-                    return;
-                }
-
-                const headers = results.meta.fields;
-                if (!headers || headers.length === 0) {
-                    setError("Nije moguće detektovati kolone u CSV fajlu.");
-                    return;
-                }
-
-                // Infer types from the first row (or first few rows)
-                const firstRow = results.data[0];
-                const columnDefs = headers.map(header => {
-                    const val = firstRow[header];
-                    let type = "TEXT";
-                    if (val !== null && val !== undefined && val !== "") {
-                        if (!isNaN(Number(val))) {
-                            if (Number.isInteger(Number(val))) type = "INTEGER";
-                            else type = "REAL";
-                        }
+        preprocessCsv(fileToParse, (cleanedFile) => {
+            Papa.parse(cleanedFile, {
+                header: true,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    if (results.data.length === 0) {
+                        setError("CSV fajl je prazan.");
+                        return;
                     }
-                    // Sanitize column name
-                    const safeColName = header.trim().replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
-                    return { original: header, name: safeColName, type };
-                });
 
-                // Create Table SQL
-                const createTableSql = `CREATE TABLE IF NOT EXISTS ${newTableName} (${columnDefs.map(c => `${c.name} ${c.type}`).join(", ")});`;
+                    const headers = results.meta.fields;
+                    if (!headers || headers.length === 0) {
+                        setError("Nije moguće detektovati kolone u CSV fajlu.");
+                        return;
+                    }
 
-                try {
-                    db.exec(createTableSql);
-
-                    // Update Mappings
-                    const newMapping = {};
-                    columnDefs.forEach(c => {
-                        newMapping[c.name] = [c.original, c.name]; // Default mapping
+                    // Infer types from the first row (or first few rows)
+                    const firstRow = results.data[0];
+                    const columnDefs = headers.map(header => {
+                        const val = firstRow[header];
+                        let type = "TEXT";
+                        if (val !== null && val !== undefined && val !== "") {
+                            if (!isNaN(Number(val))) {
+                                if (Number.isInteger(Number(val))) type = "INTEGER";
+                                else type = "REAL";
+                            }
+                        }
+                        // Sanitize column name
+                        const safeColName = header.trim().replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
+                        return { original: header, name: safeColName, type };
                     });
 
-                    const updatedMappings = { ...mappings, [newTableName]: newMapping };
-                    setMappings(updatedMappings);
+                    // Create Table SQL
+                    const createTableSql = `CREATE TABLE IF NOT EXISTS ${newTableName} (${columnDefs.map(c => `${c.name} ${c.type}`).join(", ")});`;
 
-                    // Persist Mappings
-                    db.exec("BEGIN TRANSACTION");
-                    const stmt = db.prepare("UPDATE app_config SET value = ? WHERE key = 'mappings'");
-                    stmt.run([JSON.stringify(updatedMappings)]);
-                    stmt.free();
-                    db.exec("COMMIT");
+                    try {
+                        db.exec(createTableSql);
 
-                    if (proceedToImport) {
-                        // Pass the updated mappings directly to avoid state race condition
-                        processImport(newTableName, updatedMappings);
-                    } else {
-                        setSuccessMsg(`Tabela '${newTableName}' je uspešno kreirana!`);
-                        setNewTableName("");
+                        // Update Mappings
+                        const newMapping = {};
+                        columnDefs.forEach(c => {
+                            newMapping[c.name] = [c.original, c.name]; // Default mapping
+                        });
+
+                        const updatedMappings = { ...mappings, [newTableName]: newMapping };
+                        setMappings(updatedMappings);
+
+                        // Persist Mappings
+                        db.exec("BEGIN TRANSACTION");
+                        const stmt = db.prepare("UPDATE app_config SET value = ? WHERE key = 'mappings'");
+                        stmt.run([JSON.stringify(updatedMappings)]);
+                        stmt.free();
+                        db.exec("COMMIT");
+
+                        if (proceedToImport) {
+                            // Pass the updated mappings directly to avoid state race condition
+                            processImport(newTableName, updatedMappings);
+                        } else {
+                            setSuccessMsg(`Tabela '${newTableName}' je uspešno kreirana!`);
+                            setNewTableName("");
+                        }
+                        fetchDbTables(); // Refresh table list
+                    } catch (err) {
+                        setError("Greška pri kreiranju tabele: " + err.message);
                     }
-                    fetchDbTables(); // Refresh table list
-                } catch (err) {
-                    setError("Greška pri kreiranju tabele: " + err.message);
+                },
+                error: (err) => {
+                    setError("Greška pri parsiranju CSV-a: " + err.message);
                 }
-            },
-            error: (err) => {
-                setError("Greška pri parsiranju CSV-a: " + err.message);
-            }
+            });
         });
     };
 

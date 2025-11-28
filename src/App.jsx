@@ -41,6 +41,7 @@ function App() {
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: "", message: "", onConfirm: null });
     const [mapModal, setMapModal] = useState({ isOpen: false, lat: 0, lon: 0 });
     const [columnRoles, setColumnRoles] = useState({}); // { tableName: { lat: "col1", lon: "col2" } }
+    const [mainTables, setMainTables] = useState([]); // List of tables marked as main
 
     useEffect(() => {
         const init = async () => {
@@ -122,13 +123,15 @@ function App() {
             const config = JSON.parse(configRes[0].values[0][0]);
             setMappings(config.mappings || DEFAULT_MAPPINGS);
             setColumnRoles(config.column_roles || {});
+            setMainTables(config.main_tables || Object.keys(config.mappings || DEFAULT_MAPPINGS));
         } else {
-            const initialConfig = { mappings: DEFAULT_MAPPINGS, column_roles: {} };
+            const initialConfig = { mappings: DEFAULT_MAPPINGS, column_roles: {}, main_tables: Object.keys(DEFAULT_MAPPINGS) };
             const stmt = newDb.prepare("INSERT INTO app_config (key, value) VALUES (?, ?)");
             stmt.run(['mappings', JSON.stringify(initialConfig)]);
             stmt.free();
             setMappings(DEFAULT_MAPPINGS);
             setColumnRoles({});
+            setMainTables(Object.keys(DEFAULT_MAPPINGS));
         }
         refreshImportLog(newDb);
     };
@@ -298,7 +301,8 @@ Da li ste sigurni da želite da nastavite?`)) return;
             // Prepare combined config object
             const configToSave = {
                 mappings: newMappings,
-                column_roles: columnRoles
+                column_roles: columnRoles,
+                main_tables: mainTables
             };
 
             db.exec("BEGIN TRANSACTION");
@@ -526,10 +530,12 @@ Da li sigurno želite da nastavite uvoz?`)) {
                         // Persist Mappings
                         db.exec("BEGIN TRANSACTION");
                         const stmt = db.prepare("UPDATE app_config SET value = ? WHERE key = 'mappings'");
-                        stmt.run([JSON.stringify({ mappings: updatedMappings, column_roles: columnRoles })]);
+                        stmt.run([JSON.stringify({ mappings: updatedMappings, column_roles: columnRoles, main_tables: [...mainTables, newTableName] })]);
                         stmt.free();
                         db.exec("COMMIT");
 
+                        setMappings(updatedMappings);
+                        setMainTables([...mainTables, newTableName]);
                         if (proceedToImport) {
                             // Pass the updated mappings directly to avoid state race condition
                             processImport(newTableName, updatedMappings);
@@ -731,7 +737,7 @@ Da li sigurno želite da nastavite uvoz?`)) {
                         />
                         <ConfirmModal
                             isOpen={confirmModal.isOpen}
-                            onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                            onClose={() => setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null })}
                             onConfirm={confirmModal.onConfirm}
                             title={confirmModal.title}
                             message={confirmModal.message}
@@ -812,6 +818,61 @@ Da li sigurno želite da nastavite uvoz?`)) {
                                 enableMapsExport={false}
                                 rowAction={(row) => (
                                     <div className="flex gap-2 justify-end">
+                                        <button
+                                            onClick={() => {
+                                                const tableName = row[0];
+                                                console.log('Star clicked for:', tableName, 'Is main?', mainTables.includes(tableName));
+                                                if (mainTables.includes(tableName)) {
+                                                    console.log('Opening confirm modal...');
+                                                    setConfirmModal({
+                                                        isOpen: true,
+                                                        title: "Ukloni iz Glavnih Tabela",
+                                                        message: `Da li sigurno želite da uklonite tabelu "${tableName}" iz Glavnih tabela? Mapiranje će biti obrisano.`,
+                                                        onConfirm: () => {
+                                                            console.log('Confirm clicked, removing from main tables...');
+                                                            const newMainTables = mainTables.filter(t => t !== tableName);
+                                                            setMainTables(newMainTables);
+                                                            const newMappings = { ...mappings };
+                                                            delete newMappings[tableName];
+                                                            setMappings(newMappings);
+                                                            const config = { mappings: newMappings, column_roles: columnRoles, main_tables: newMainTables };
+                                                            db.exec(`UPDATE app_config SET value = '${JSON.stringify(config)}' WHERE key = 'mappings'`);
+                                                            setSuccessMsg(`Tabela "${tableName}" uklonjena iz Glavnih tabela.`);
+                                                            setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null });
+                                                        }
+                                                    });
+                                                } else {
+                                                    const newMainTables = [...mainTables, tableName];
+                                                    setMainTables(newMainTables);
+                                                    let newMappings = { ...mappings };
+                                                    if (!newMappings[tableName]) {
+                                                        const colRes = db.exec(`SELECT * FROM ${tableName} LIMIT 1`);
+                                                        if (colRes.length > 0) {
+                                                            const cols = colRes[0].columns;
+                                                            newMappings[tableName] = {};
+                                                            cols.forEach(col => {
+                                                                const variants = [
+                                                                    col,
+                                                                    col.charAt(0).toUpperCase() + col.slice(1),
+                                                                    col.replace(/_/g, ' '),
+                                                                    col.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                                                                    col.charAt(0).toUpperCase() + col.slice(1).replace(/_/g, ' '),
+                                                                ];
+                                                                const uniqueVariants = [...new Set(variants)].join(', ');
+                                                                newMappings[tableName][col] = uniqueVariants;
+                                                            });
+                                                        }
+                                                    }
+                                                    setMappings(newMappings);
+                                                    const config = { mappings: newMappings, column_roles: columnRoles, main_tables: newMainTables };
+                                                    db.exec(`UPDATE app_config SET value = '${JSON.stringify(config)}' WHERE key = 'mappings'`);
+                                                    setSuccessMsg(`Tabela "${tableName}" postavljena kao Glavna sa automatskim mapiranjem varijanti naziva kolona.`);
+                                                }
+                                            }}
+                                            className="text-blue-600 hover:text-blue-800 text-xs font-bold"
+                                        >
+                                            {mainTables.includes(row[0]) ? '★' : '☆'}
+                                        </button>
                                         <button onClick={() => openInSql(row[0])} className="text-blue-600 hover:text-blue-800 text-xs font-bold border border-blue-200 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded transition">SQL</button>
                                         <button onClick={() => handleDropTable(row[0])} className="text-red-600 hover:text-red-800 text-xs font-bold border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition">Obriši</button>
                                     </div>
@@ -820,21 +881,102 @@ Da li sigurno želite da nastavite uvoz?`)) {
                         </div>
 
                         <div>
-                            <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg> Sve Tabele</h3>
+                            <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg> Tabele</h3>
                             <DataTable
                                 columns={["Naziv Tabele", "Tip"]}
-                                data={dbTables.map(tbl => {
+                                data={dbTables.filter(tbl => !tbl.startsWith('import_')).map(tbl => {
                                     let type = "Ostalo";
-                                    if (Object.keys(mappings).includes(tbl)) type = "Glavna";
+                                    if (mainTables.includes(tbl)) type = "Glavna";
                                     else if (tbl.startsWith('import_')) type = "Backup";
                                     else if (tbl === 'app_import_history' || tbl === 'app_config' || tbl === 'sqlite_sequence') type = "Sistemska";
                                     return [tbl, type];
                                 })}
-                                title="Sve Tabele u Bazi"
+                                title="Tabele u Bazi"
                                 enableMapsExport={false}
                                 rowAction={(row) => (
                                     <div className="flex gap-2 justify-end">
                                         <button onClick={() => openInSql(row[0])} className="text-blue-600 hover:text-blue-800 text-xs font-bold border border-blue-200 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded transition">SQL</button>
+                                        {row[1] !== 'Sistemska' && (
+                                            <button
+                                                onClick={() => {
+                                                    const tableName = row[0];
+                                                    if (mainTables.includes(tableName)) {
+                                                        setConfirmModal({
+                                                            isOpen: true,
+                                                            title: "Ukloni iz Glavnih Tabela",
+                                                            message: `Da li sigurno želite da uklonite tabelu "${tableName}" iz Glavnih tabela? Mapiranje će biti obrisano.`,
+                                                            onConfirm: () => {
+                                                                const newMainTables = mainTables.filter(t => t !== tableName);
+                                                                setMainTables(newMainTables);
+                                                                const newMappings = { ...mappings };
+                                                                delete newMappings[tableName];
+                                                                setMappings(newMappings);
+                                                                const config = { mappings: newMappings, column_roles: columnRoles, main_tables: newMainTables };
+                                                                db.exec(`UPDATE app_config SET value = '${JSON.stringify(config)}' WHERE key = 'mappings'`);
+                                                                setSuccessMsg(`Tabela "${tableName}" uklonjena iz Glavnih tabela.`);
+                                                                setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null });
+                                                            }
+                                                        });
+                                                    } else {
+                                                        // Promote to Glavna
+                                                        const newMainTables = [...mainTables, tableName];
+                                                        setMainTables(newMainTables);
+
+                                                        // Auto-create mapping with multiple column name variants
+                                                        let newMappings = { ...mappings };
+                                                        if (!newMappings[tableName]) {
+                                                            // Get table columns
+                                                            const colRes = db.exec(`SELECT * FROM ${tableName} LIMIT 1`);
+                                                            if (colRes.length > 0) {
+                                                                const cols = colRes[0].columns;
+                                                                newMappings[tableName] = {};
+
+                                                                cols.forEach(col => {
+                                                                    // Generate multiple variants for each column
+                                                                    const variants = [
+                                                                        col,                                        // original: vrsta
+                                                                        col.charAt(0).toUpperCase() + col.slice(1), // capitalized: Vrsta
+                                                                        col.replace(/_/g, ' '),                    // with spaces: kvalitet brojanja
+                                                                        col.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), // title case: Kvalitet Brojanja
+                                                                        col.charAt(0).toUpperCase() + col.slice(1).replace(/_/g, ' '), // Kvalitet brojanja
+                                                                    ];
+
+                                                                    // Remove duplicates and join
+                                                                    const uniqueVariants = [...new Set(variants)].join(', ');
+                                                                    newMappings[tableName][col] = uniqueVariants;
+                                                                });
+                                                            } else {
+                                                                // No data, try PRAGMA
+                                                                const pragmaRes = db.exec(`PRAGMA table_info(${tableName})`);
+                                                                if (pragmaRes.length > 0) {
+                                                                    newMappings[tableName] = {};
+                                                                    pragmaRes[0].values.forEach(row => {
+                                                                        const col = row[1];
+                                                                        const variants = [
+                                                                            col,
+                                                                            col.charAt(0).toUpperCase() + col.slice(1),
+                                                                            col.replace(/_/g, ' '),
+                                                                            col.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                                                                            col.charAt(0).toUpperCase() + col.slice(1).replace(/_/g, ' '),
+                                                                        ];
+                                                                        const uniqueVariants = [...new Set(variants)].join(', ');
+                                                                        newMappings[tableName][col] = uniqueVariants;
+                                                                    });
+                                                                }
+                                                            }
+                                                        }
+
+                                                        setMappings(newMappings);
+                                                        const config = { mappings: newMappings, column_roles: columnRoles, main_tables: newMainTables };
+                                                        db.exec(`UPDATE app_config SET value = '${JSON.stringify(config)}' WHERE key = 'mappings'`);
+                                                        setSuccessMsg(`Tabela "${tableName}" postavljena kao Glavna sa automatskim mapiranjem varijanti naziva kolona.`);
+                                                    }
+                                                }}
+                                                className="text-blue-600 hover:text-blue-800 text-xs font-bold ml-2"
+                                            >
+                                                {mainTables.includes(row[0]) ? '★' : '☆'}
+                                            </button>
+                                        )}
                                         {(row[1] === 'Backup' || row[1] === 'Ostalo') && (
                                             <button onClick={() => handleDropTable(row[0])} className="text-red-600 hover:text-red-800 text-xs font-bold border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition">Obriši</button>
                                         )}

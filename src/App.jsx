@@ -120,10 +120,53 @@ function App() {
         newDb.exec(`CREATE TABLE IF NOT EXISTS app_config (key TEXT PRIMARY KEY, value TEXT);`);
         const configRes = newDb.exec("SELECT value FROM app_config WHERE key = 'mappings'");
         if (configRes.length > 0) {
-            const config = JSON.parse(configRes[0].values[0][0]);
-            setMappings(config.mappings || DEFAULT_MAPPINGS);
-            setColumnRoles(config.column_roles || {});
-            setMainTables(config.main_tables || Object.keys(config.mappings || DEFAULT_MAPPINGS));
+            try {
+                const rawValue = configRes[0].values[0][0];
+                const config = JSON.parse(rawValue);
+                
+                // Check if mappings is directly in config or nested
+                let loadedMappings;
+                if (config.mappings && typeof config.mappings === 'object') {
+                    loadedMappings = config.mappings;
+                } else if (config.ostale_vrste || Object.keys(config).some(key => !['mappings', 'column_roles', 'main_tables'].includes(key))) {
+                    // If config has direct table keys, it might be the old format
+                    // Extract all keys that are not metadata keys
+                    const tableKeys = Object.keys(config).filter(key => 
+                        !['mappings', 'column_roles', 'main_tables'].includes(key) && 
+                        typeof config[key] === 'object'
+                    );
+                    if (tableKeys.length > 0) {
+                        // Old format - config itself is mappings
+                        loadedMappings = {};
+                        tableKeys.forEach(key => {
+                            loadedMappings[key] = config[key];
+                        });
+                        // Also include config.mappings if it exists
+                        if (config.mappings) {
+                            loadedMappings = { ...loadedMappings, ...config.mappings };
+                        }
+                    } else {
+                        loadedMappings = config.mappings || DEFAULT_MAPPINGS;
+                    }
+                } else {
+                    loadedMappings = config.mappings || DEFAULT_MAPPINGS;
+                }
+                
+                // Ensure mappings is an object, not null or undefined
+                if (loadedMappings && typeof loadedMappings === 'object') {
+                    setMappings(loadedMappings);
+                    setColumnRoles(config.column_roles || {});
+                    setMainTables(config.main_tables || Object.keys(loadedMappings));
+                } else {
+                    setMappings(DEFAULT_MAPPINGS);
+                    setColumnRoles({});
+                    setMainTables(Object.keys(DEFAULT_MAPPINGS));
+                }
+            } catch (e) {
+                setMappings(DEFAULT_MAPPINGS);
+                setColumnRoles({});
+                setMainTables(Object.keys(DEFAULT_MAPPINGS));
+            }
         } else {
             const initialConfig = { mappings: DEFAULT_MAPPINGS, column_roles: {}, main_tables: Object.keys(DEFAULT_MAPPINGS) };
             const stmt = newDb.prepare("INSERT INTO app_config (key, value) VALUES (?, ?)");
@@ -681,7 +724,7 @@ Da li sigurno želite da nastavite uvoz?`)) {
 
                 {activeTab === 'dashboard' && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {Object.keys(mappings).map(tbl => (
+                        {Object.keys(mappings || {}).map(tbl => (
                             <div key={tbl} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:border-blue-300 transition group">
                                 <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-gray-800 capitalize group-hover:text-blue-600">{tbl}</h3><span className="bg-blue-50 text-blue-600 py-1 px-3 rounded-full text-xs font-bold">Tabela</span></div>
                                 <p className="text-gray-500 text-sm mb-4">Glavna tabela podataka.</p>

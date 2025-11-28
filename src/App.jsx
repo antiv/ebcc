@@ -706,6 +706,7 @@ Da li sigurno želite da nastavite uvoz?`)) {
                             enableMapsExport={true}
                             className="flex-1 shadow-sm border border-gray-200 rounded-xl"
                             stickyHeader={true}
+                            stickyColumns={1}
                             columnRoles={columnRoles[viewerTable]}
                             rowAction={(row) => {
                                 const { latIdx, lonIdx } = getLatLonIndices(viewerColumns, columnRoles[viewerTable]);
@@ -734,13 +735,6 @@ Da li sigurno želite da nastavite uvoz?`)) {
                             onSave={handleSaveRow}
                             columns={viewerColumns}
                             initialData={editingRow}
-                        />
-                        <ConfirmModal
-                            isOpen={confirmModal.isOpen}
-                            onClose={() => setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null })}
-                            onConfirm={confirmModal.onConfirm}
-                            title={confirmModal.title}
-                            message={confirmModal.message}
                         />
                         <MapModal
                             isOpen={mapModal.isOpen}
@@ -821,15 +815,12 @@ Da li sigurno želite da nastavite uvoz?`)) {
                                         <button
                                             onClick={() => {
                                                 const tableName = row[0];
-                                                console.log('Star clicked for:', tableName, 'Is main?', mainTables.includes(tableName));
                                                 if (mainTables.includes(tableName)) {
-                                                    console.log('Opening confirm modal...');
                                                     setConfirmModal({
                                                         isOpen: true,
                                                         title: "Ukloni iz Glavnih Tabela",
                                                         message: `Da li sigurno želite da uklonite tabelu "${tableName}" iz Glavnih tabela? Mapiranje će biti obrisano.`,
                                                         onConfirm: () => {
-                                                            console.log('Confirm clicked, removing from main tables...');
                                                             const newMainTables = mainTables.filter(t => t !== tableName);
                                                             setMainTables(newMainTables);
                                                             const newMappings = { ...mappings };
@@ -1057,6 +1048,13 @@ Da li sigurno želite da nastavite uvoz?`)) {
                     </div>
                 )}
             </main>
+            <ConfirmModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+            />
         </div>
     );
 }

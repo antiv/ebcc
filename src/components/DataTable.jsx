@@ -4,7 +4,7 @@ import Pagination from './Pagination';
 import { PAGE_SIZE } from '../constants';
 import { getLatLonIndices } from '../utils/helpers';
 
-const DataTable = ({ columns, data, title, enableMapsExport = true, className = "", stickyHeader = false, rowAction = null, columnRoles = {} }) => {
+const DataTable = ({ columns, data, title, enableMapsExport = true, className = "", stickyHeader = false, rowAction = null, columnRoles = {}, stickyColumns = 0 }) => {
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState("");
     const [sortCol, setSortCol] = useState(null);
@@ -148,21 +148,43 @@ const DataTable = ({ columns, data, title, enableMapsExport = true, className = 
                 <table className="min-w-full divide-y divide-gray-200 text-sm text-left relative">
                     <thead className={`bg-gray-50 ${stickyHeader || viewMode === 'infinite' ? 'sticky top-0 z-10 shadow-sm' : ''}`}>
                         <tr>
-                            {columns.map((col, i) => (
-                                <th key={i} onClick={() => handleSort(i)} className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:bg-gray-100 select-none group border-b border-gray-200 bg-gray-50">
-                                    <div className="flex items-center gap-1">{col} {sortCol === i ? <span className="text-blue-600">{sortDir === 'ASC' ? '▲' : '▼'}</span> : <span className="text-gray-300 opacity-0 group-hover:opacity-100 transition">▲</span>}</div>
-                                </th>
-                            ))}
+                            {columns.map((col, i) => {
+                                const isSticky = i < stickyColumns;
+                                const isLastSticky = i === stickyColumns - 1;
+                                const leftOffset = i * 200; // Approximate column width, adjust if needed
+                                return (
+                                    <th 
+                                        key={i} 
+                                        onClick={() => handleSort(i)} 
+                                        className={`px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap cursor-pointer hover:bg-gray-100 select-none group border-b border-gray-200 bg-gray-50 ${isSticky ? 'sticky z-20' : ''} ${isLastSticky ? 'border-r-2 border-gray-300' : ''}`}
+                                        style={isSticky ? { left: `${leftOffset}px` } : {}}
+                                    >
+                                        <div className="flex items-center gap-1">{col} {sortCol === i ? <span className="text-blue-600">{sortDir === 'ASC' ? '▲' : '▼'}</span> : <span className="text-gray-300 opacity-0 group-hover:opacity-100 transition">▲</span>}</div>
+                                    </th>
+                                );
+                            })}
                             {rowAction && <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50 text-right">Akcije</th>}
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                         {displayData.length > 0 ? (
                             displayData.map((row, i) => (
-                                <tr key={i} className="hover:bg-blue-50 transition-colors">
-                                    {row.map((val, j) => (
-                                        <td key={j} className="px-6 py-3 whitespace-nowrap text-gray-700 max-w-xs overflow-hidden text-ellipsis" title={val}>{val === null ? <span className="text-gray-300 italic">null</span> : val}</td>
-                                    ))}
+                                <tr key={i} className="hover:bg-blue-50 transition-colors group/row">
+                                    {row.map((val, j) => {
+                                        const isSticky = j < stickyColumns;
+                                        const isLastSticky = j === stickyColumns - 1;
+                                        const leftOffset = j * 200; // Approximate column width, adjust if needed
+                                        return (
+                                            <td 
+                                                key={j} 
+                                                className={`px-6 py-3 whitespace-nowrap text-gray-700 max-w-xs overflow-hidden text-ellipsis ${isSticky ? 'sticky z-10 bg-white group-hover/row:bg-blue-50' : ''} ${isLastSticky ? 'border-r-2 border-gray-300' : ''}`}
+                                                style={isSticky ? { left: `${leftOffset}px` } : {}}
+                                                title={val}
+                                            >
+                                                {val === null ? <span className="text-gray-300 italic">null</span> : val}
+                                            </td>
+                                        );
+                                    })}
                                     {rowAction && <td className="px-6 py-3 whitespace-nowrap text-right">{rowAction(row)}</td>}
                                 </tr>
                             ))

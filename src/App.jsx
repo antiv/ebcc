@@ -4,6 +4,10 @@ import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import Papa from 'papaparse';
 import { DEFAULT_MAPPINGS, INITIAL_SCHEMA } from './constants';
 import DataTable from './components/DataTable';
+import EditRowModal from './components/EditRowModal';
+import ConfirmModal from './components/ConfirmModal';
+import MapModal from './components/MapModal';
+import { getLatLonIndices } from './utils/helpers';
 
 // Get APP_MODE for filename generation
 const APP_MODE = import.meta.env.VITE_APP_MODE || 'ebcc';
@@ -32,6 +36,11 @@ function App() {
     const [dbTables, setDbTables] = useState([]); // List of all tables
     const [newTableFile, setNewTableFile] = useState(null);
     const [newTableName, setNewTableName] = useState("");
+    const [editingRow, setEditingRow] = useState(null);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: "", message: "", onConfirm: null });
+    const [mapModal, setMapModal] = useState({ isOpen: false, lat: 0, lon: 0 });
+    const [columnRoles, setColumnRoles] = useState({}); // { tableName: { lat: "col1", lon: "col2" } }
 
     useEffect(() => {
         const init = async () => {
@@ -109,12 +118,17 @@ function App() {
         // 2. Init Config
         newDb.exec(`CREATE TABLE IF NOT EXISTS app_config (key TEXT PRIMARY KEY, value TEXT);`);
         const configRes = newDb.exec("SELECT value FROM app_config WHERE key = 'mappings'");
-        if (configRes.length > 0) setMappings(JSON.parse(configRes[0].values[0][0]));
-        else {
+        if (configRes.length > 0) {
+            const config = JSON.parse(configRes[0].values[0][0]);
+            setMappings(config.mappings || DEFAULT_MAPPINGS);
+            setColumnRoles(config.column_roles || {});
+        } else {
+            const initialConfig = { mappings: DEFAULT_MAPPINGS, column_roles: {} };
             const stmt = newDb.prepare("INSERT INTO app_config (key, value) VALUES (?, ?)");
-            stmt.run(['mappings', JSON.stringify(DEFAULT_MAPPINGS)]);
+            stmt.run(['mappings', JSON.stringify(initialConfig)]);
             stmt.free();
             setMappings(DEFAULT_MAPPINGS);
+            setColumnRoles({});
         }
         refreshImportLog(newDb);
     };
@@ -264,10 +278,10 @@ Da li ste sigurni da želite da nastavite?`)) return;
     const handleMappingChange = (dbCol, val) => {
         setTempMappings(prev => ({ ...prev, [dbCol]: val }));
     };
-    const saveSettings = () => {
+    const handleSaveSettings = () => {
         if (!db) return;
         try {
-            // Convert string values back to arrays
+            // Convert string values back to arrays for mappings
             const processedMappings = {};
             Object.keys(tempMappings).forEach(col => {
                 const val = tempMappings[col];
@@ -280,9 +294,16 @@ Da li ste sigurni da želite da nastavite?`)) return;
 
             const newMappings = { ...mappings, [settingsTable]: processedMappings };
             setMappings(newMappings);
+
+            // Prepare combined config object
+            const configToSave = {
+                mappings: newMappings,
+                column_roles: columnRoles
+            };
+
             db.exec("BEGIN TRANSACTION");
             const stmt = db.prepare("UPDATE app_config SET value = ? WHERE key = 'mappings'");
-            stmt.run([JSON.stringify(newMappings)]);
+            stmt.run([JSON.stringify(configToSave)]);
             stmt.free();
             db.exec("COMMIT");
             setSuccessMsg("Podešavanja su uspešno sačuvana u bazu!");
@@ -295,9 +316,18 @@ Da li ste sigurni da želite da nastavite?`)) return;
         try {
             const colRes = db.exec(`SELECT * FROM ${viewerTable} LIMIT 1`);
             const cols = colRes.length > 0 ? colRes[0].columns : [];
-            setViewerColumns(cols);
-            const dataRes = db.exec(`SELECT * FROM ${viewerTable}`);
-            setViewerData(dataRes.length > 0 ? dataRes[0].values : []);
+            // Ensure rowid is fetched but maybe handled specially in UI if needed
+            // We will fetch rowid explicitly to be sure
+            const dataRes = db.exec(`SELECT rowid, * FROM ${viewerTable}`);
+            if (dataRes.length > 0) {
+                const values = dataRes[0].values;
+                const columnsWithId = ["rowid", ...cols];
+                setViewerColumns(columnsWithId);
+                setViewerData(values);
+            } else {
+                setViewerData([]);
+                setViewerColumns(["rowid", ...cols]);
+            }
         } catch (err) { if (err.message.includes("no such table")) { setViewerData([]); setViewerColumns([]); } else setError("Greška pri učitavanju tabele: " + err.message); } finally { setViewerLoading(false); }
     };
     useEffect(() => { if (activeTab === 'viewer') fetchViewerData(); }, [activeTab, viewerTable, db]);
@@ -496,7 +526,7 @@ Da li sigurno želite da nastavite uvoz?`)) {
                         // Persist Mappings
                         db.exec("BEGIN TRANSACTION");
                         const stmt = db.prepare("UPDATE app_config SET value = ? WHERE key = 'mappings'");
-                        stmt.run([JSON.stringify(updatedMappings)]);
+                        stmt.run([JSON.stringify({ mappings: updatedMappings, column_roles: columnRoles })]);
                         stmt.free();
                         db.exec("COMMIT");
 
@@ -540,6 +570,58 @@ Da li sigurno želite da nastavite uvoz?`)) {
         a.href = url;
         a.download = filename;
         a.click();
+    };
+
+    const handleDeleteRow = (row) => {
+        setConfirmModal({
+            isOpen: true,
+            title: "Brisanje Reda",
+            message: "Da li ste sigurni da želite da obrišete ovaj red? Ova akcija je nepovratna.",
+            onConfirm: () => {
+                try {
+                    const id = row[0];
+                    db.exec(`DELETE FROM ${viewerTable} WHERE rowid = ${id}`);
+                    setSuccessMsg("Red uspešno obrisan.");
+                    fetchViewerData();
+                } catch (err) {
+                    setError("Greška pri brisanju reda: " + err.message);
+                }
+                setConfirmModal({ ...confirmModal, isOpen: false });
+            }
+        });
+    };
+
+    const handleEditRow = (row) => {
+        setEditingRow(row);
+        setIsEditModalOpen(true);
+    };
+
+    const handleSaveRow = (updatedValues) => {
+        try {
+            const id = editingRow[0]; // rowid is first
+            const updates = [];
+            const params = [];
+
+            // Skip rowid (index 0)
+            viewerColumns.slice(1).forEach((col, index) => {
+                updates.push(`"${col}" = ?`);
+                params.push(updatedValues[col]);
+            });
+
+            const sql = `UPDATE ${viewerTable} SET ${updates.join(", ")} WHERE rowid = ?`;
+            params.push(id);
+
+            const stmt = db.prepare(sql);
+            stmt.run(params);
+            stmt.free();
+
+            setSuccessMsg("Red uspešno izmenjen.");
+            setIsEditModalOpen(false);
+            setEditingRow(null);
+            fetchViewerData();
+        } catch (err) {
+            setError("Greška pri čuvanju izmena: " + err.message);
+        }
     };
 
     // Ažurirana execQuery da prihvata SQL argument
@@ -611,7 +693,55 @@ Da li sigurno želite da nastavite uvoz?`)) {
                                 {Object.keys(mappings).map(t => <option key={t} value={t}>{t}</option>)}
                             </select>
                         </div>
-                        <DataTable data={viewerData} columns={viewerColumns} title={`Pregled: ${viewerTable}`} enableMapsExport={true} className="flex-1 shadow-sm border border-gray-200 rounded-xl" stickyHeader={true} />
+                        <DataTable
+                            data={viewerData}
+                            columns={viewerColumns}
+                            title={`Pregled: ${viewerTable}`}
+                            enableMapsExport={true}
+                            className="flex-1 shadow-sm border border-gray-200 rounded-xl"
+                            stickyHeader={true}
+                            columnRoles={columnRoles[viewerTable]}
+                            rowAction={(row) => {
+                                const { latIdx, lonIdx } = getLatLonIndices(viewerColumns, columnRoles[viewerTable]);
+                                const hasCoords = latIdx !== -1 && lonIdx !== -1 && row[latIdx] && row[lonIdx];
+
+                                return (
+                                    <div className="flex gap-2 justify-end">
+                                        {hasCoords && (
+                                            <button
+                                                onClick={() => setMapModal({ isOpen: true, lat: row[latIdx], lon: row[lonIdx] })}
+                                                className="text-green-600 hover:text-green-800 text-xs font-bold border border-green-200 bg-green-50 hover:bg-green-100 px-3 py-1 rounded transition flex items-center gap-1"
+                                            >
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                                Mapa
+                                            </button>
+                                        )}
+                                        <button onClick={() => handleEditRow(row)} className="text-blue-600 hover:text-blue-800 text-xs font-bold border border-blue-200 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded transition">Izmeni</button>
+                                        <button onClick={() => handleDeleteRow(row)} className="text-red-600 hover:text-red-800 text-xs font-bold border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition">Obriši</button>
+                                    </div>
+                                );
+                            }}
+                        />
+                        <EditRowModal
+                            isOpen={isEditModalOpen}
+                            onClose={() => { setIsEditModalOpen(false); setEditingRow(null); }}
+                            onSave={handleSaveRow}
+                            columns={viewerColumns}
+                            initialData={editingRow}
+                        />
+                        <ConfirmModal
+                            isOpen={confirmModal.isOpen}
+                            onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                            onConfirm={confirmModal.onConfirm}
+                            title={confirmModal.title}
+                            message={confirmModal.message}
+                        />
+                        <MapModal
+                            isOpen={mapModal.isOpen}
+                            onClose={() => setMapModal({ ...mapModal, isOpen: false })}
+                            lat={mapModal.lat}
+                            lon={mapModal.lon}
+                        />
                     </div>
                 )}
 
@@ -717,7 +847,7 @@ Da li sigurno želite da nastavite uvoz?`)) {
 
                 {activeTab === 'settings' && tempMappings && (
                     <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                        <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center"><h2 className="text-lg font-bold text-gray-800">Podešavanje Mapiranja Kolona</h2><button onClick={saveSettings} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg> Sačuvaj Podešavanja</button></div>
+                        <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center"><h2 className="text-lg font-bold text-gray-800">Podešavanje Mapiranja Kolona</h2><button onClick={handleSaveSettings} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg> Sačuvaj Podešavanja</button></div>
                         <div className="p-6">
                             <div className="mb-6"><label className="block text-sm font-medium text-gray-700 mb-2">Izaberi Tabelu za Mapiranje:</label><select value={settingsTable} onChange={(e) => setSettingsTable(e.target.value)} className="w-full md:w-1/3 p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm">
                                 {Object.keys(mappings).map(t => <option key={t} value={t}>{t}</option>)}
@@ -730,6 +860,49 @@ Da li sigurno želite da nastavite uvoz?`)) {
                                         ))}
                                     </tbody>
                                 </table>
+                            </div>
+
+                            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mt-4">
+                                <h3 className="font-bold text-gray-700 mb-2">Konfiguracija Mape</h3>
+                                <p className="text-xs text-gray-500 mb-4">Ručno odaberite kolone za Latitudu i Longitudu.</p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-600 mb-1">Latituda Kolona</label>
+                                        <select
+                                            value={columnRoles[settingsTable]?.lat || ""}
+                                            onChange={(e) => {
+                                                const newRoles = { ...columnRoles };
+                                                if (!newRoles[settingsTable]) newRoles[settingsTable] = {};
+                                                newRoles[settingsTable].lat = e.target.value;
+                                                setColumnRoles(newRoles);
+                                            }}
+                                            className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                        >
+                                            <option value="">Automatska detekcija</option>
+                                            {Object.keys(tempMappings).map(col => (
+                                                <option key={col} value={col}>{col}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-600 mb-1">Longituda Kolona</label>
+                                        <select
+                                            value={columnRoles[settingsTable]?.lon || ""}
+                                            onChange={(e) => {
+                                                const newRoles = { ...columnRoles };
+                                                if (!newRoles[settingsTable]) newRoles[settingsTable] = {};
+                                                newRoles[settingsTable].lon = e.target.value;
+                                                setColumnRoles(newRoles);
+                                            }}
+                                            className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                        >
+                                            <option value="">Automatska detekcija</option>
+                                            {Object.keys(tempMappings).map(col => (
+                                                <option key={col} value={col}>{col}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

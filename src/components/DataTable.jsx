@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Papa from 'papaparse';
 import Pagination from './Pagination';
 import { PAGE_SIZE } from '../constants';
+import { getLatLonIndices } from '../utils/helpers';
 
-const DataTable = ({ columns, data, title, enableMapsExport = true, className = "", stickyHeader = false, rowAction = null }) => {
+const DataTable = ({ columns, data, title, enableMapsExport = true, className = "", stickyHeader = false, rowAction = null, columnRoles = {} }) => {
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState("");
     const [sortCol, setSortCol] = useState(null);
@@ -16,11 +17,11 @@ const DataTable = ({ columns, data, title, enableMapsExport = true, className = 
 
     useEffect(() => {
         localStorage.setItem('dataTableViewMode', viewMode);
-        setVisibleRows(PAGE_SIZE); // Reset visible rows when mode changes
+        setVisibleRows(PAGE_SIZE);
     }, [viewMode]);
 
     useEffect(() => {
-        setVisibleRows(PAGE_SIZE); // Reset when filters change
+        setVisibleRows(PAGE_SIZE);
     }, [search, sortCol, sortDir]);
 
     const filteredData = useMemo(() => {
@@ -81,15 +82,13 @@ const DataTable = ({ columns, data, title, enableMapsExport = true, className = 
         if (mode === 'standard') {
             exportData = filteredData.map(row => {
                 let obj = {};
-                columns.forEach((col, i) => obj[col] = row[i]);
+                columns.forEach((col, i) => {
+                    if (col !== 'rowid') obj[col] = row[i];
+                });
                 return obj;
             });
         } else if (mode === 'google') {
-            let latIdx = columns.findIndex(c => /^latitud/i.test(c));
-            if (latIdx === -1) latIdx = columns.findIndex(c => /latitud/i.test(c));
-
-            let lonIdx = columns.findIndex(c => /^longitud/i.test(c));
-            if (lonIdx === -1) lonIdx = columns.findIndex(c => /longitud/i.test(c));
+            const { latIdx, lonIdx } = getLatLonIndices(columns, columnRoles);
             if (latIdx === -1 || lonIdx === -1) return alert("Greška: Nisu pronađene kolone za Latitudu i Longitudu.");
             exportData = filteredData.map(row => {
                 let obj = {};

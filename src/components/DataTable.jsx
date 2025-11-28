@@ -85,8 +85,11 @@ const DataTable = ({ columns, data, title, enableMapsExport = true, className = 
                 return obj;
             });
         } else if (mode === 'google') {
-            let latIdx = columns.findIndex(c => /lat/i.test(c));
-            let lonIdx = columns.findIndex(c => /lon/i.test(c) || /lng/i.test(c));
+            let latIdx = columns.findIndex(c => /^latitud/i.test(c));
+            if (latIdx === -1) latIdx = columns.findIndex(c => /latitud/i.test(c));
+
+            let lonIdx = columns.findIndex(c => /^longitud/i.test(c));
+            if (lonIdx === -1) lonIdx = columns.findIndex(c => /longitud/i.test(c));
             if (latIdx === -1 || lonIdx === -1) return alert("Greška: Nisu pronađene kolone za Latitudu i Longitudu.");
             exportData = filteredData.map(row => {
                 let obj = {};

@@ -7,6 +7,7 @@ import DataTable from './components/DataTable';
 import EditRowModal from './components/EditRowModal';
 import ConfirmModal from './components/ConfirmModal';
 import MapModal from './components/MapModal';
+import QueryBuilderModal from './components/QueryBuilderModal';
 import { getLatLonIndices } from './utils/helpers';
 
 // Get APP_MODE for filename generation
@@ -42,6 +43,12 @@ function App() {
     const [mapModal, setMapModal] = useState({ isOpen: false, lat: 0, lon: 0 });
     const [columnRoles, setColumnRoles] = useState({}); // { tableName: { lat: "col1", lon: "col2" } }
     const [mainTables, setMainTables] = useState([]); // List of tables marked as main
+    const [isQueryBuilderOpen, setIsQueryBuilderOpen] = useState(false);
+    const [savedQueries, setSavedQueries] = useState([]);
+    const [showSaveQueryDialog, setShowSaveQueryDialog] = useState(false);
+    const [queryName, setQueryName] = useState('');
+    const [editingQueryId, setEditingQueryId] = useState(null);
+    const [editingQueryName, setEditingQueryName] = useState('');
 
     useEffect(() => {
         const init = async () => {
@@ -116,7 +123,17 @@ function App() {
         `);
         try { newDb.exec("ALTER TABLE app_import_history ADD COLUMN backup_table_name TEXT"); } catch (e) { }
 
-        // 2. Init Config
+        // 2. Init Saved Queries Table
+        newDb.exec(`
+            CREATE TABLE IF NOT EXISTS app_saved_queries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                sql TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // 3. Init Config
         newDb.exec(`CREATE TABLE IF NOT EXISTS app_config (key TEXT PRIMARY KEY, value TEXT);`);
         const configRes = newDb.exec("SELECT value FROM app_config WHERE key = 'mappings'");
         if (configRes.length > 0) {
@@ -177,6 +194,58 @@ function App() {
             setMainTables(Object.keys(DEFAULT_MAPPINGS));
         }
         refreshImportLog(newDb);
+        loadSavedQueriesFromDb(newDb);
+    };
+
+    const loadSavedQueriesFromDb = (database) => {
+        if (!database) return;
+        try {
+            const res = database.exec("SELECT id, name, sql, created_at FROM app_saved_queries ORDER BY created_at DESC");
+            if (res.length > 0) {
+                const queries = res[0].values.map(row => ({
+                    id: row[0],
+                    name: row[1],
+                    sql: row[2],
+                    createdAt: row[3]
+                }));
+                setSavedQueries(queries);
+            } else {
+                setSavedQueries([]);
+            }
+        } catch (e) {
+            console.error('Error loading saved queries from DB:', e);
+            setSavedQueries([]);
+        }
+    };
+
+    const migrateQueriesFromLocalStorage = (database) => {
+        if (!database) return;
+        try {
+            const saved = localStorage.getItem('savedQueries');
+            if (saved) {
+                const queries = JSON.parse(saved);
+                if (queries.length > 0) {
+                    // Check if there are already queries in DB
+                    const existingRes = database.exec("SELECT COUNT(*) as cnt FROM app_saved_queries");
+                    const existingCount = existingRes.length > 0 ? existingRes[0].values[0][0] : 0;
+                    
+                    if (existingCount === 0) {
+                        // Migrate from localStorage to DB
+                        const stmt = database.prepare("INSERT INTO app_saved_queries (name, sql, created_at) VALUES (?, ?, ?)");
+                        queries.forEach(query => {
+                            stmt.run([query.name, query.sql, query.createdAt || new Date().toISOString()]);
+                        });
+                        stmt.free();
+                        // Clear localStorage after migration
+                        localStorage.removeItem('savedQueries');
+                        // Reload from DB
+                        loadSavedQueriesFromDb(database);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Error migrating queries from localStorage:', e);
+        }
     };
 
     const handleFileUpload = (e) => {
@@ -265,8 +334,114 @@ Ova akcija je nepovratna!`)) {
     };
 
     useEffect(() => {
-        if (activeTab === 'database') fetchDbTables();
+        if (activeTab === 'database' || activeTab === 'sql') fetchDbTables();
     }, [activeTab, db]);
+
+    useEffect(() => {
+        if (db) {
+            loadSavedQueriesFromDb(db);
+            migrateQueriesFromLocalStorage(db);
+        }
+    }, [db]);
+
+    const saveQuery = () => {
+        if (!db) {
+            setError('Baza nije učitana.');
+            return;
+        }
+        if (!queryName.trim() || !query.trim()) {
+            setError('Molimo unesite naziv upita.');
+            return;
+        }
+
+        try {
+            const stmt = db.prepare("INSERT INTO app_saved_queries (name, sql, created_at) VALUES (?, ?, ?)");
+            const createdAt = new Date().toISOString();
+            stmt.run([queryName.trim(), query, createdAt]);
+            stmt.free();
+
+            const newQuery = {
+                id: db.exec("SELECT last_insert_rowid()")[0].values[0][0],
+                name: queryName.trim(),
+                sql: query,
+                createdAt: createdAt
+            };
+
+            setSavedQueries([...savedQueries, newQuery]);
+            setQueryName('');
+            setShowSaveQueryDialog(false);
+            setSuccessMsg('Upit uspešno sačuvan!');
+        } catch (e) {
+            console.error('Error saving query:', e);
+            setError('Greška pri čuvanju upita: ' + e.message);
+        }
+    };
+
+    const deleteQuery = (id) => {
+        if (!db) {
+            setError('Baza nije učitana.');
+            return;
+        }
+        if (confirm('Da li ste sigurni da želite da obrišete ovaj upit?')) {
+            try {
+                const stmt = db.prepare("DELETE FROM app_saved_queries WHERE id = ?");
+                stmt.run([id]);
+                stmt.free();
+
+                const updated = savedQueries.filter(q => q.id !== id);
+                setSavedQueries(updated);
+                setSuccessMsg('Upit uspešno obrisan.');
+            } catch (e) {
+                console.error('Error deleting query:', e);
+                setError('Greška pri brisanju upita: ' + e.message);
+            }
+        }
+    };
+
+    const startEditingQuery = (query) => {
+        setEditingQueryId(query.id);
+        setEditingQueryName(query.name);
+    };
+
+    const saveEditedQuery = (id) => {
+        if (!db) {
+            setError('Baza nije učitana.');
+            return;
+        }
+        if (!editingQueryName.trim()) {
+            setError('Naziv upita ne može biti prazan.');
+            return;
+        }
+
+        try {
+            const stmt = db.prepare("UPDATE app_saved_queries SET name = ? WHERE id = ?");
+            stmt.run([editingQueryName.trim(), id]);
+            stmt.free();
+
+            const updated = savedQueries.map(q => 
+                q.id === id ? { ...q, name: editingQueryName.trim() } : q
+            );
+            setSavedQueries(updated);
+            setEditingQueryId(null);
+            setEditingQueryName('');
+            setSuccessMsg('Naziv upita uspešno izmenjen.');
+        } catch (e) {
+            console.error('Error updating query:', e);
+            setError('Greška pri izmeni naziva upita: ' + e.message);
+        }
+    };
+
+    const cancelEditingQuery = () => {
+        setEditingQueryId(null);
+        setEditingQueryName('');
+    };
+
+    const loadQuery = (savedQuery) => {
+        setQuery(savedQuery.sql);
+        setShowSaveQueryDialog(false);
+        setQueryName('');
+        // Just load the query, don't execute automatically
+    };
 
     const handleUndoImport = (row) => {
         const [id, filename, target_table, import_date, row_count, backup_table_name] = row;
@@ -680,9 +855,11 @@ Da li sigurno želite da nastavite uvoz?`)) {
             const res = db.exec(sqlToRun);
             setQueryResults(res);
             setError(null);
+            // Don't auto-show save dialog - user must click the button
         } catch (err) {
             setError(err.message);
             setQueryResults(null);
+            setShowSaveQueryDialog(false);
         }
     };
 
@@ -1086,8 +1263,197 @@ Da li sigurno želite da nastavite uvoz?`)) {
 
                 {activeTab === 'sql' && (
                     <div className="space-y-6">
-                        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200"><label className="block text-sm font-bold text-gray-700 mb-2">Napredni SQL Upit</label><textarea className="sql-font w-full h-40 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="SELECT * FROM..."></textarea><div className="mt-3 flex justify-end"><button onClick={() => execQuery()} className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-6 rounded-lg font-medium">Izvrši</button></div></div>
-                        {queryResults && queryResults.map((res, i) => (<DataTable key={i} columns={res.columns} data={res.values} title={`Rezultat ${i + 1}`} enableMapsExport={true} />))}
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            {/* SQL Console Section */}
+                            <div className={`bg-white p-4 rounded-xl shadow-sm border border-gray-200 ${savedQueries.length > 0 ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <label className="block text-sm font-bold text-gray-700">SQL Konzola</label>
+                                    <button
+                                        onClick={() => setIsQueryBuilderOpen(true)}
+                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                        </svg>
+                                        Query Builder
+                                    </button>
+                                </div>
+                                <div>
+                                    <textarea
+                                        className="sql-font w-full h-40 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                                        value={query}
+                                        onChange={(e) => setQuery(e.target.value)}
+                                        placeholder="SELECT * FROM..."
+                                    />
+                                    <div className="mt-3 flex justify-end">
+                                        <button
+                                            onClick={() => execQuery()}
+                                            className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-6 rounded-lg font-medium"
+                                        >
+                                            Izvrši
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Saved Queries Section */}
+                            {savedQueries.length > 0 && (
+                                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                                    <h3 className="text-sm font-bold text-gray-700 mb-3">Sačuvani Upiti</h3>
+                                    <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                                        {savedQueries.map(savedQuery => (
+                                            <div
+                                                key={savedQuery.id}
+                                                className="group flex items-center justify-between p-2 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-gray-50 transition"
+                                            >
+                                                {editingQueryId === savedQuery.id ? (
+                                                    <div className="flex items-center gap-2 flex-1">
+                                                        <input
+                                                            type="text"
+                                                            value={editingQueryName}
+                                                            onChange={(e) => setEditingQueryName(e.target.value)}
+                                                            onKeyPress={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    saveEditedQuery(savedQuery.id);
+                                                                } else if (e.key === 'Escape') {
+                                                                    cancelEditingQuery();
+                                                                }
+                                                            }}
+                                                            className="flex-1 px-2 py-1 text-sm border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                                            autoFocus
+                                                        />
+                                                        <button
+                                                            onClick={() => saveEditedQuery(savedQuery.id)}
+                                                            className="text-green-600 hover:text-green-800 text-xs font-bold"
+                                                            title="Sačuvaj"
+                                                        >
+                                                            ✓
+                                                        </button>
+                                                        <button
+                                                            onClick={cancelEditingQuery}
+                                                            className="text-gray-600 hover:text-gray-800 text-xs font-bold"
+                                                            title="Otkaži"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <div 
+                                                            className="font-medium text-sm text-gray-800 flex-1 truncate pr-2 cursor-pointer"
+                                                            onClick={() => loadQuery(savedQuery)}
+                                                        >
+                                                            {savedQuery.name}
+                                                        </div>
+                                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    startEditingQuery(savedQuery);
+                                                                }}
+                                                                className="text-blue-600 hover:text-blue-800 text-xs font-bold"
+                                                                title="Izmeni naziv"
+                                                            >
+                                                                ✎
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    deleteQuery(savedQuery.id);
+                                                                }}
+                                                                className="text-red-600 hover:text-red-800 text-xs font-bold"
+                                                                title="Obriši"
+                                                            >
+                                                                ✕
+                                                            </button>
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        {error && activeTab === 'sql' && (
+                            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded shadow-sm">
+                                <div className="flex items-start">
+                                    <svg className="w-5 h-5 text-red-600 mr-2 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <div className="flex-1">
+                                        <p className="text-red-700 font-medium text-sm">SQL Greška:</p>
+                                        <p className="text-red-600 text-sm mt-1 font-mono">{error}</p>
+                                    </div>
+                                    <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 ml-2">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                        {queryResults && queryResults.length > 0 && (
+                            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-sm font-bold text-gray-700">Rezultati Upita</h3>
+                                    <button
+                                        onClick={() => setShowSaveQueryDialog(true)}
+                                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
+                                        </svg>
+                                        Sačuvaj Upit
+                                    </button>
+                                </div>
+                                {showSaveQueryDialog && (
+                                    <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                        <div className="flex items-center gap-4">
+                                            <div className="flex-1">
+                                                <input
+                                                    type="text"
+                                                    value={queryName}
+                                                    onChange={(e) => setQueryName(e.target.value)}
+                                                    placeholder="Naziv upita..."
+                                                    className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    onKeyPress={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            saveQuery();
+                                                        }
+                                                    }}
+                                                />
+                                            </div>
+                                            <button
+                                                onClick={saveQuery}
+                                                disabled={!queryName.trim() || !query.trim()}
+                                                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium"
+                                            >
+                                                Sačuvaj
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setShowSaveQueryDialog(false);
+                                                    setQueryName('');
+                                                }}
+                                                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-sm font-medium"
+                                            >
+                                                Otkaži
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                                {queryResults.map((res, i) => (
+                                    <DataTable
+                                        key={i}
+                                        columns={res.columns}
+                                        data={res.values}
+                                        title={`Rezultat ${i + 1}`}
+                                        enableMapsExport={true}
+                                    />
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
             </main>
@@ -1097,6 +1463,17 @@ Da li sigurno želite da nastavite uvoz?`)) {
                 onConfirm={confirmModal.onConfirm}
                 title={confirmModal.title}
                 message={confirmModal.message}
+            />
+            <QueryBuilderModal
+                isOpen={isQueryBuilderOpen}
+                onClose={() => setIsQueryBuilderOpen(false)}
+                db={db}
+                dbTables={dbTables}
+                onGenerateQuery={(generatedQuery) => {
+                    setQuery(generatedQuery);
+                    setIsQueryBuilderOpen(false);
+                    setTimeout(() => execQuery(generatedQuery), 100);
+                }}
             />
         </div>
     );

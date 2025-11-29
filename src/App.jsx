@@ -1393,7 +1393,7 @@ Da li sigurno želite da nastavite uvoz?`)) {
                                 </div>
                             </div>
                         )}
-                        {queryResults && queryResults.length > 0 && (
+                        {queryResults && (
                             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                                 <div className="flex justify-between items-center mb-4">
                                     <h3 className="text-sm font-bold text-gray-700">Rezultati Upita</h3>
@@ -1443,15 +1443,42 @@ Da li sigurno želite da nastavite uvoz?`)) {
                                         </div>
                                     </div>
                                 )}
-                                {queryResults.map((res, i) => (
-                                    <DataTable
-                                        key={i}
-                                        columns={res.columns}
-                                        data={res.values}
-                                        title={`Rezultat ${i + 1}`}
-                                        enableMapsExport={true}
-                                    />
-                                ))}
+                                {queryResults.length === 0 ? (
+                                    <div className="text-center py-8">
+                                        <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                        </svg>
+                                        <p className="text-gray-600 font-medium">Upit je uspešno izvršen, ali nije vratio rezultate.</p>
+                                        <p className="text-gray-500 text-sm mt-2">Nema podataka koji odgovaraju uslovima upita.</p>
+                                    </div>
+                                ) : (
+                                    queryResults.map((res, i) => {
+                                        // Check if result has no data
+                                        if (!res.values || res.values.length === 0) {
+                                            return (
+                                                <div key={i} className="mb-4">
+                                                    <h3 className="text-sm font-bold text-gray-700 mb-2">Rezultat {i + 1}</h3>
+                                                    <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+                                                        <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                                        </svg>
+                                                        <p className="text-gray-600 font-medium">Nema podataka</p>
+                                                        <p className="text-gray-500 text-sm mt-2">Upit je uspešno izvršen, ali nije vratio rezultate.</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+                                        return (
+                                            <DataTable
+                                                key={i}
+                                                columns={res.columns}
+                                                data={res.values}
+                                                title={`Rezultat ${i + 1}`}
+                                                enableMapsExport={true}
+                                            />
+                                        );
+                                    })
+                                )}
                             </div>
                         )}
                     </div>

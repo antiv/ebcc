@@ -108,8 +108,11 @@ const DataTable = ({ columns, data, title, enableMapsExport = true, className = 
         document.body.removeChild(link);
     };
 
+    // Determine if we need scroll container with fixed height
+    const needsScrollContainer = viewMode === 'infinite' || stickyHeader;
+
     return (
-        <div className={`bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col overflow-hidden ${className || 'mb-8'}`}>
+        <div className={`bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col ${needsScrollContainer ? 'overflow-hidden' : ''} ${className || 'mb-8'}`} style={needsScrollContainer ? { maxHeight: '600px' } : {}}>
             <div className="p-4 border-b border-gray-200 flex flex-col md:flex-row gap-4 items-center justify-between bg-gray-50 flex-shrink-0">
                 <div className="flex flex-col md:flex-row md:items-center gap-4 w-full">
                     <div className="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center gap-2 whitespace-nowrap">
@@ -144,7 +147,7 @@ const DataTable = ({ columns, data, title, enableMapsExport = true, className = 
                     <svg className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
             </div>
-            <div ref={scrollContainerRef} className={`overflow-x-auto custom-scroll ${stickyHeader || viewMode === 'infinite' ? 'flex-1 overflow-y-auto min-h-0' : ''}`}>
+            <div ref={scrollContainerRef} className={`overflow-x-auto custom-scroll ${needsScrollContainer ? 'flex-1 overflow-y-auto min-h-0' : ''}`}>
                 <table className="min-w-full divide-y divide-gray-200 text-sm text-left relative">
                     <thead className={`bg-gray-50 ${stickyHeader || viewMode === 'infinite' ? 'sticky top-0 z-10 shadow-sm' : ''}`}>
                         <tr>

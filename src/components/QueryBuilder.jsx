@@ -25,6 +25,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
     const [orderByColumns, setOrderByColumns] = useState([]);
     const [tableColumns, setTableColumns] = useState({});
     const [generatedSQL, setGeneratedSQL] = useState('');
+    const [activeSection, setActiveSection] = useState('table'); // 'table', 'columns', 'joins', 'where', 'groupby', 'orderby'
 
     // Removed auto-selection of first table - user must manually select
 
@@ -295,399 +296,542 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
         return [...new Set(tables)];
     };
 
+    const getSectionCount = (section) => {
+        switch(section) {
+            case 'columns': return selectedColumns.length;
+            case 'joins': return joins.length;
+            case 'where': return whereConditions.length;
+            case 'groupby': return groupByColumns.length;
+            case 'orderby': return orderByColumns.length;
+            default: return 0;
+        }
+    };
+
+    const getSectionLabel = (section) => {
+        switch(section) {
+            case 'table': return 'Glavna Tabela';
+            case 'columns': return 'Polja';
+            case 'joins': return 'Join Tabele';
+            case 'where': return 'WHERE Uslovi';
+            case 'groupby': return 'GROUP BY';
+            case 'orderby': return 'ORDER BY';
+            default: return '';
+        }
+    };
+
+    const sections = [
+        { id: 'table', label: 'Glavna Tabela', icon: '📊' },
+        { id: 'columns', label: 'Polja', icon: '📋' },
+        { id: 'joins', label: 'Join Tabele', icon: '🔗' },
+        { id: 'where', label: 'WHERE Uslovi', icon: '🔍' },
+        { id: 'groupby', label: 'GROUP BY', icon: '📊' },
+        { id: 'orderby', label: 'ORDER BY', icon: '⬆️' }
+    ];
+
     return (
-        <div className="space-y-6">
-            {/* Main Table Selection */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                <label className="block text-sm font-bold text-gray-700 mb-2">Glavna Tabela</label>
-                <Autocomplete
-                    options={dbTables}
-                    value={mainTable}
-                    onChange={(value) => {
-                        setMainTable(value);
-                        // Only load columns if the table exists in dbTables
-                        if (value && dbTables.includes(value)) {
-                            loadTableColumns(value);
-                        }
-                    }}
-                    placeholder="Unesite naziv tabele..."
-                    className="w-full"
-                />
-                {mainTable && !dbTables.includes(mainTable) && (
-                    <p className="text-xs text-red-600 mt-1">Tabela "{mainTable}" ne postoji u bazi.</p>
-                )}
-            </div>
-
-            {/* Selected Columns */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                <div className="flex justify-between items-center mb-3">
-                    <label className="block text-sm font-bold text-gray-700">Izabrana Polja</label>
-                    <button
-                        onClick={addColumn}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-medium"
-                    >
-                        + Dodaj Polje
-                    </button>
-                </div>
-                {selectedColumns.length === 0 && (
-                    <p className="text-sm text-gray-500 italic">Nema izabranih polja. Koristiće se * (sva polja).</p>
-                )}
-                {selectedColumns.map(col => (
-                    <div key={col.id} className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-                            <Autocomplete
-                                options={[mainTable, ...joins.filter(j => j.table).map(j => j.table)].filter(Boolean)}
-                                value={col.table}
-                                onChange={(value) => {
-                                    updateColumn(col.id, 'table', value);
-                                    if (value) {
-                                        loadTableColumns(value);
-                                    }
-                                }}
-                                placeholder="Tabela..."
-                                className="p-0"
-                            />
-                            <select
-                                value={col.column}
-                                onChange={(e) => updateColumn(col.id, 'column', e.target.value)}
-                                className="p-2 border border-gray-300 rounded text-sm"
-                            >
-                                <option value="">Izaberi kolonu...</option>
-                                {(tableColumns[col.table || mainTable] || []).map(colName => (
-                                    <option key={colName} value={colName}>{colName}</option>
-                                ))}
-                            </select>
-                            <select
-                                value={col.aggregate}
-                                onChange={(e) => updateColumn(col.id, 'aggregate', e.target.value)}
-                                className="p-2 border border-gray-300 rounded text-sm"
-                            >
-                                {AGGREGATE_FUNCTIONS.map(func => (
-                                    <option key={func.value} value={func.value}>{func.label}</option>
-                                ))}
-                            </select>
-                            <input
-                                type="text"
-                                placeholder="Alias (opciono)"
-                                value={col.alias}
-                                onChange={(e) => updateColumn(col.id, 'alias', e.target.value)}
-                                className="p-2 border border-gray-300 rounded text-sm"
-                            />
-                            <div className="flex items-center gap-2">
-                                <label className="text-xs text-gray-600 flex items-center gap-1">
-                                    <input
-                                        type="checkbox"
-                                        checked={col.distinct}
-                                        onChange={(e) => updateColumn(col.id, 'distinct', e.target.checked)}
-                                        className="rounded"
-                                    />
-                                    DISTINCT
-                                </label>
-                                <button
-                                    onClick={() => removeColumn(col.id)}
-                                    className="text-red-600 hover:text-red-800 text-sm font-bold"
-                                >
-                                    ✕
-                                </button>
-                            </div>
-                        </div>
+        <div className="flex flex-col h-full">
+            <div className="flex flex-1 overflow-hidden border-t border-gray-200">
+                {/* Left Panel: Filter Categories */}
+                <div className="w-64 border-r border-gray-200 bg-gray-50 overflow-y-auto">
+                    <div className="p-4 border-b border-gray-200 bg-white">
+                        <h3 className="text-sm font-bold text-gray-700">Kategorije</h3>
                     </div>
-                ))}
-            </div>
-
-            {/* JOINs */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                <div className="flex justify-between items-center mb-3">
-                    <label className="block text-sm font-bold text-gray-700">Join Tabele</label>
-                    <button
-                        onClick={addJoin}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-medium"
-                    >
-                        + Dodaj Join
-                    </button>
-                </div>
-                {joins.map((join, joinIndex) => {
-                    // Get all available tables for left side (main table + previous joins)
-                    const availableLeftTables = [mainTable, ...joins.slice(0, joinIndex).map(j => j.table)].filter(Boolean);
-                    const leftTable = join.onLeftTable || mainTable;
-                    const rightTable = join.table;
-                    
-                    return (
-                        <div key={join.id} className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                            <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
-                                <select
-                                    value={join.type}
-                                    onChange={(e) => updateJoin(join.id, 'type', e.target.value)}
-                                    className="p-2 border border-gray-300 rounded text-sm"
+                    <div className="p-2">
+                        {sections.map(section => {
+                            const count = getSectionCount(section.id);
+                            const isActive = activeSection === section.id;
+                            return (
+                                <div
+                                    key={section.id}
+                                    onClick={() => setActiveSection(section.id)}
+                                    className={`flex items-center justify-between p-3 mb-1 rounded-lg cursor-pointer transition ${
+                                        isActive 
+                                            ? 'bg-blue-50 border border-blue-200' 
+                                            : 'hover:bg-gray-100 border border-transparent'
+                                    }`}
                                 >
-                                    {JOIN_TYPES.map(jt => (
-                                        <option key={jt.value} value={jt.value}>{jt.label}</option>
-                                    ))}
-                                </select>
+                                    <div className="flex items-center gap-2 flex-1">
+                                        <span className="text-lg">{section.icon}</span>
+                                        <span className="text-sm font-medium text-gray-700">{section.label}</span>
+                                    </div>
+                                    {count > 0 && (
+                                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                            isActive ? 'bg-blue-200 text-blue-800' : 'bg-gray-200 text-gray-600'
+                                        }`}>
+                                            {count}
+                                        </span>
+                                    )}
+                                    <svg 
+                                        className={`w-4 h-4 text-gray-400 ${isActive ? 'text-blue-600' : ''}`} 
+                                        fill="none" 
+                                        stroke="currentColor" 
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
+                                    </svg>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Right Panel: Section Details */}
+                <div className="flex-1 overflow-y-auto bg-white">
+                    <div className="p-6">
+                        {activeSection === 'table' && (
+                            <div>
+                                <div className="flex items-center gap-2 mb-4">
+                                    <span className="text-lg">📊</span>
+                                    <h3 className="text-lg font-bold text-gray-800">Glavna Tabela</h3>
+                                </div>
+                                <p className="text-sm text-gray-600 mb-4">Izaberite glavnu tabelu za upit.</p>
                                 <Autocomplete
-                                    options={dbTables.filter(t => t !== mainTable)}
-                                    value={join.table}
+                                    options={dbTables}
+                                    value={mainTable}
                                     onChange={(value) => {
-                                        updateJoin(join.id, 'table', value);
+                                        setMainTable(value);
                                         if (value && dbTables.includes(value)) {
                                             loadTableColumns(value);
                                         }
                                     }}
-                                    placeholder="Izaberi tabelu..."
-                                    className="p-0"
+                                    placeholder="Unesite naziv tabele..."
+                                    className="w-full max-w-md"
                                 />
-                                <select
-                                    value={leftTable}
-                                    onChange={(e) => {
-                                        updateJoin(join.id, 'onLeftTable', e.target.value);
-                                        updateJoin(join.id, 'onLeft', '');
-                                    }}
-                                    className="p-2 border border-gray-300 rounded text-sm"
-                                >
-                                    {availableLeftTables.map(t => (
-                                        <option key={t} value={t}>{t}</option>
-                                    ))}
-                                </select>
-                                <select
-                                    value={join.onLeft}
-                                    onChange={(e) => updateJoin(join.id, 'onLeft', e.target.value)}
-                                    className="p-2 border border-gray-300 rounded text-sm"
-                                    disabled={!leftTable}
-                                >
-                                    <option value="">Kolona...</option>
-                                    {(tableColumns[leftTable] || []).map(col => (
-                                        <option key={col} value={col}>{col}</option>
-                                    ))}
-                                </select>
-                                <select
-                                    value={join.onRight}
-                                    onChange={(e) => updateJoin(join.id, 'onRight', e.target.value)}
-                                    className="p-2 border border-gray-300 rounded text-sm"
-                                    disabled={!rightTable}
-                                >
-                                    <option value="">Kolona...</option>
-                                    {(tableColumns[rightTable] || []).map(col => (
-                                        <option key={col} value={col}>{col}</option>
-                                    ))}
-                                </select>
-                                <button
-                                    onClick={() => removeJoin(join.id)}
-                                    className="text-red-600 hover:text-red-800 text-sm font-bold px-2"
-                                >
-                                    ✕
-                                </button>
+                                {mainTable && !dbTables.includes(mainTable) && (
+                                    <p className="text-xs text-red-600 mt-2">Tabela "{mainTable}" ne postoji u bazi.</p>
+                                )}
                             </div>
-                        </div>
-                    );
-                })}
+                        )}
+
+                        {activeSection === 'columns' && (
+                            <div>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-lg">📋</span>
+                                        <h3 className="text-lg font-bold text-gray-800">Polja</h3>
+                                    </div>
+                                    <button
+                                        onClick={addColumn}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                                    >
+                                        + Dodaj Polje
+                                    </button>
+                                </div>
+                                <p className="text-sm text-gray-600 mb-4">Izaberite polja koja će biti uključena u upit. Ako ne izaberete nijedno, koristiće se * (sva polja).</p>
+                                {selectedColumns.length === 0 && (
+                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                                        <p className="text-sm text-gray-500 italic">Nema izabranih polja. Koristiće se * (sva polja).</p>
+                                    </div>
+                                )}
+                                <div className="space-y-3">
+                                    {selectedColumns.map(col => (
+                                        <div key={col.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                                                <Autocomplete
+                                                    options={[mainTable, ...joins.filter(j => j.table).map(j => j.table)].filter(Boolean)}
+                                                    value={col.table}
+                                                    onChange={(value) => {
+                                                        updateColumn(col.id, 'table', value);
+                                                        if (value) {
+                                                            loadTableColumns(value);
+                                                        }
+                                                    }}
+                                                    placeholder="Tabela..."
+                                                    className="p-0"
+                                                />
+                                                <select
+                                                    value={col.column}
+                                                    onChange={(e) => updateColumn(col.id, 'column', e.target.value)}
+                                                    className="p-2 border border-gray-300 rounded-lg text-sm"
+                                                >
+                                                    <option value="">Izaberi kolonu...</option>
+                                                    {(tableColumns[col.table || mainTable] || []).map(colName => (
+                                                        <option key={colName} value={colName}>{colName}</option>
+                                                    ))}
+                                                </select>
+                                                <select
+                                                    value={col.aggregate}
+                                                    onChange={(e) => updateColumn(col.id, 'aggregate', e.target.value)}
+                                                    className="p-2 border border-gray-300 rounded-lg text-sm"
+                                                >
+                                                    {AGGREGATE_FUNCTIONS.map(func => (
+                                                        <option key={func.value} value={func.value}>{func.label}</option>
+                                                    ))}
+                                                </select>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Alias (opciono)"
+                                                    value={col.alias}
+                                                    onChange={(e) => updateColumn(col.id, 'alias', e.target.value)}
+                                                    className="p-2 border border-gray-300 rounded-lg text-sm"
+                                                />
+                                                <div className="flex items-center gap-2">
+                                                    <label className="text-xs text-gray-600 flex items-center gap-1">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={col.distinct}
+                                                            onChange={(e) => updateColumn(col.id, 'distinct', e.target.checked)}
+                                                            className="rounded"
+                                                        />
+                                                        DISTINCT
+                                                    </label>
+                                                    <button
+                                                        onClick={() => removeColumn(col.id)}
+                                                        className="text-red-600 hover:text-red-800 text-sm font-bold ml-auto"
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {activeSection === 'joins' && (
+                            <div>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-lg">🔗</span>
+                                        <h3 className="text-lg font-bold text-gray-800">Join Tabele</h3>
+                                    </div>
+                                    <button
+                                        onClick={addJoin}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                                    >
+                                        + Dodaj Join
+                                    </button>
+                                </div>
+                                <p className="text-sm text-gray-600 mb-4">Dodajte join operacije za povezivanje tabela.</p>
+                                {joins.length === 0 && (
+                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                                        <p className="text-sm text-gray-500">Nema dodatih join operacija.</p>
+                                    </div>
+                                )}
+                                <div className="space-y-3">
+                                    {joins.map((join, joinIndex) => {
+                                        const availableLeftTables = [mainTable, ...joins.slice(0, joinIndex).map(j => j.table)].filter(Boolean);
+                                        const leftTable = join.onLeftTable || mainTable;
+                                        const rightTable = join.table;
+                                        
+                                        return (
+                                            <div key={join.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                                <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                                                    <select
+                                                        value={join.type}
+                                                        onChange={(e) => updateJoin(join.id, 'type', e.target.value)}
+                                                        className="p-2 border border-gray-300 rounded-lg text-sm"
+                                                    >
+                                                        {JOIN_TYPES.map(jt => (
+                                                            <option key={jt.value} value={jt.value}>{jt.label}</option>
+                                                        ))}
+                                                    </select>
+                                                    <Autocomplete
+                                                        options={dbTables.filter(t => t !== mainTable)}
+                                                        value={join.table}
+                                                        onChange={(value) => {
+                                                            updateJoin(join.id, 'table', value);
+                                                            if (value && dbTables.includes(value)) {
+                                                                loadTableColumns(value);
+                                                            }
+                                                        }}
+                                                        placeholder="Izaberi tabelu..."
+                                                        className="p-0"
+                                                    />
+                                                    <select
+                                                        value={leftTable}
+                                                        onChange={(e) => {
+                                                            updateJoin(join.id, 'onLeftTable', e.target.value);
+                                                            updateJoin(join.id, 'onLeft', '');
+                                                        }}
+                                                        className="p-2 border border-gray-300 rounded-lg text-sm"
+                                                    >
+                                                        {availableLeftTables.map(t => (
+                                                            <option key={t} value={t}>{t}</option>
+                                                        ))}
+                                                    </select>
+                                                    <select
+                                                        value={join.onLeft}
+                                                        onChange={(e) => updateJoin(join.id, 'onLeft', e.target.value)}
+                                                        className="p-2 border border-gray-300 rounded-lg text-sm"
+                                                        disabled={!leftTable}
+                                                    >
+                                                        <option value="">Kolona...</option>
+                                                        {(tableColumns[leftTable] || []).map(col => (
+                                                            <option key={col} value={col}>{col}</option>
+                                                        ))}
+                                                    </select>
+                                                    <select
+                                                        value={join.onRight}
+                                                        onChange={(e) => updateJoin(join.id, 'onRight', e.target.value)}
+                                                        className="p-2 border border-gray-300 rounded-lg text-sm"
+                                                        disabled={!rightTable}
+                                                    >
+                                                        <option value="">Kolona...</option>
+                                                        {(tableColumns[rightTable] || []).map(col => (
+                                                            <option key={col} value={col}>{col}</option>
+                                                        ))}
+                                                    </select>
+                                                    <button
+                                                        onClick={() => removeJoin(join.id)}
+                                                        className="text-red-600 hover:text-red-800 text-sm font-bold px-2"
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {activeSection === 'where' && (
+                            <div>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-lg">🔍</span>
+                                        <h3 className="text-lg font-bold text-gray-800">WHERE Uslovi</h3>
+                                    </div>
+                                    <button
+                                        onClick={addWhereCondition}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                                    >
+                                        + Dodaj Uslov
+                                    </button>
+                                </div>
+                                <p className="text-sm text-gray-600 mb-4">Dodajte uslove za filtriranje rezultata.</p>
+                                {whereConditions.length === 0 && (
+                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                                        <p className="text-sm text-gray-500">Nema dodatih WHERE uslova.</p>
+                                    </div>
+                                )}
+                                <div className="space-y-3">
+                                    {whereConditions.map((cond, idx) => (
+                                        <div key={cond.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                                                {idx > 0 && (
+                                                    <select
+                                                        value={cond.logic}
+                                                        onChange={(e) => updateWhereCondition(cond.id, 'logic', e.target.value)}
+                                                        className="p-2 border border-gray-300 rounded-lg text-sm"
+                                                    >
+                                                        <option value="AND">AND</option>
+                                                        <option value="OR">OR</option>
+                                                    </select>
+                                                )}
+                                                <Autocomplete
+                                                    options={[mainTable, ...joins.filter(j => j.table).map(j => j.table)].filter(Boolean)}
+                                                    value={cond.table}
+                                                    onChange={(value) => {
+                                                        updateWhereCondition(cond.id, 'table', value);
+                                                        if (value) {
+                                                            loadTableColumns(value);
+                                                        }
+                                                    }}
+                                                    placeholder="Tabela..."
+                                                    className="p-0"
+                                                />
+                                                <select
+                                                    value={cond.column}
+                                                    onChange={(e) => updateWhereCondition(cond.id, 'column', e.target.value)}
+                                                    className="p-2 border border-gray-300 rounded-lg text-sm"
+                                                >
+                                                    <option value="">Izaberi kolonu...</option>
+                                                    {(tableColumns[cond.table || mainTable] || []).map(colName => (
+                                                        <option key={colName} value={colName}>{colName}</option>
+                                                    ))}
+                                                </select>
+                                                <select
+                                                    value={cond.operator}
+                                                    onChange={(e) => updateWhereCondition(cond.id, 'operator', e.target.value)}
+                                                    className="p-2 border border-gray-300 rounded-lg text-sm"
+                                                >
+                                                    <option value="=">=</option>
+                                                    <option value="!=">!=</option>
+                                                    <option value=">">&gt;</option>
+                                                    <option value="<">&lt;</option>
+                                                    <option value=">=">&gt;=</option>
+                                                    <option value="<=">&lt;=</option>
+                                                    <option value="LIKE">LIKE</option>
+                                                    <option value="IN">IN</option>
+                                                </select>
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Vrednost"
+                                                        value={cond.value}
+                                                        onChange={(e) => updateWhereCondition(cond.id, 'value', e.target.value)}
+                                                        className="p-2 border border-gray-300 rounded-lg text-sm flex-1"
+                                                    />
+                                                    <button
+                                                        onClick={() => removeWhereCondition(cond.id)}
+                                                        className="text-red-600 hover:text-red-800 text-sm font-bold"
+                                                    >
+                                                        ✕
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {activeSection === 'groupby' && (
+                            <div>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-lg">📊</span>
+                                        <h3 className="text-lg font-bold text-gray-800">GROUP BY</h3>
+                                    </div>
+                                    <button
+                                        onClick={addGroupBy}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                                    >
+                                        + Dodaj Kolonu
+                                    </button>
+                                </div>
+                                <p className="text-sm text-gray-600 mb-4">Izaberite kolone za grupisanje rezultata.</p>
+                                {groupByColumns.length === 0 && (
+                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                                        <p className="text-sm text-gray-500">Nema dodatih GROUP BY kolona.</p>
+                                    </div>
+                                )}
+                                <div className="space-y-3">
+                                    {groupByColumns.map(gb => (
+                                        <div key={gb.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-3">
+                                            <Autocomplete
+                                                options={[mainTable, ...joins.filter(j => j.table).map(j => j.table)].filter(Boolean)}
+                                                value={gb.table}
+                                                onChange={(value) => {
+                                                    updateGroupBy(gb.id, 'table', value);
+                                                    if (value) {
+                                                        loadTableColumns(value);
+                                                    }
+                                                }}
+                                                placeholder="Tabela..."
+                                                className="p-0 flex-1"
+                                            />
+                                            <select
+                                                value={gb.column}
+                                                onChange={(e) => updateGroupBy(gb.id, 'column', e.target.value)}
+                                                className="p-2 border border-gray-300 rounded-lg text-sm flex-1"
+                                            >
+                                                <option value="">Izaberi kolonu...</option>
+                                                {(tableColumns[gb.table || mainTable] || []).map(colName => (
+                                                    <option key={colName} value={colName}>{colName}</option>
+                                                ))}
+                                            </select>
+                                            <button
+                                                onClick={() => removeGroupBy(gb.id)}
+                                                className="text-red-600 hover:text-red-800 text-sm font-bold px-3"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {activeSection === 'orderby' && (
+                            <div>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-lg">⬆️</span>
+                                        <h3 className="text-lg font-bold text-gray-800">ORDER BY</h3>
+                                    </div>
+                                    <button
+                                        onClick={addOrderBy}
+                                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                                    >
+                                        + Dodaj Kolonu
+                                    </button>
+                                </div>
+                                <p className="text-sm text-gray-600 mb-4">Izaberite kolone za sortiranje rezultata.</p>
+                                {orderByColumns.length === 0 && (
+                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                                        <p className="text-sm text-gray-500">Nema dodatih ORDER BY kolona.</p>
+                                    </div>
+                                )}
+                                <div className="space-y-3">
+                                    {orderByColumns.map(ob => (
+                                        <div key={ob.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-3">
+                                            <Autocomplete
+                                                options={[mainTable, ...joins.filter(j => j.table).map(j => j.table)].filter(Boolean)}
+                                                value={ob.table}
+                                                onChange={(value) => {
+                                                    updateOrderBy(ob.id, 'table', value);
+                                                    if (value) {
+                                                        loadTableColumns(value);
+                                                    }
+                                                }}
+                                                placeholder="Tabela..."
+                                                className="p-0 flex-1"
+                                            />
+                                            <select
+                                                value={ob.column}
+                                                onChange={(e) => updateOrderBy(ob.id, 'column', e.target.value)}
+                                                className="p-2 border border-gray-300 rounded-lg text-sm flex-1"
+                                            >
+                                                <option value="">Izaberi kolonu...</option>
+                                                {(tableColumns[ob.table || mainTable] || []).map(colName => (
+                                                    <option key={colName} value={colName}>{colName}</option>
+                                                ))}
+                                            </select>
+                                            <select
+                                                value={ob.direction}
+                                                onChange={(e) => updateOrderBy(ob.id, 'direction', e.target.value)}
+                                                className="p-2 border border-gray-300 rounded-lg text-sm"
+                                            >
+                                                <option value="ASC">ASC</option>
+                                                <option value="DESC">DESC</option>
+                                            </select>
+                                            <button
+                                                onClick={() => removeOrderBy(ob.id)}
+                                                className="text-red-600 hover:text-red-800 text-sm font-bold px-3"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
 
-            {/* WHERE Conditions */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                <div className="flex justify-between items-center mb-3">
-                    <label className="block text-sm font-bold text-gray-700">WHERE Uslovi</label>
-                    <button
-                        onClick={addWhereCondition}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-medium"
-                    >
-                        + Dodaj Uslov
-                    </button>
-                </div>
-                {whereConditions.map((cond, idx) => (
-                    <div key={cond.id} className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-                            {idx > 0 && (
-                                <select
-                                    value={cond.logic}
-                                    onChange={(e) => updateWhereCondition(cond.id, 'logic', e.target.value)}
-                                    className="p-2 border border-gray-300 rounded text-sm"
-                                >
-                                    <option value="AND">AND</option>
-                                    <option value="OR">OR</option>
-                                </select>
-                            )}
-                            <Autocomplete
-                                options={[mainTable, ...joins.filter(j => j.table).map(j => j.table)].filter(Boolean)}
-                                value={cond.table}
-                                onChange={(value) => {
-                                    updateWhereCondition(cond.id, 'table', value);
-                                    if (value) {
-                                        loadTableColumns(value);
-                                    }
+            {/* Footer with SQL Preview and Generate Button */}
+            <div className="border-t border-gray-200 bg-gray-50 p-4">
+                {generatedSQL && (
+                    <div className="mb-4 bg-gray-900 text-green-400 p-4 rounded-lg border border-gray-700">
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="block text-sm font-bold text-gray-300">Generisani SQL Upit</label>
+                            <button
+                                onClick={() => {
+                                    navigator.clipboard.writeText(generatedSQL);
+                                    alert('SQL upit kopiran u clipboard!');
                                 }}
-                                placeholder="Tabela..."
-                                className="p-0"
-                            />
-                            <select
-                                value={cond.column}
-                                onChange={(e) => updateWhereCondition(cond.id, 'column', e.target.value)}
-                                className="p-2 border border-gray-300 rounded text-sm"
+                                className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded"
                             >
-                                <option value="">Izaberi kolonu...</option>
-                                {(tableColumns[cond.table || mainTable] || []).map(colName => (
-                                    <option key={colName} value={colName}>{colName}</option>
-                                ))}
-                            </select>
-                            <select
-                                value={cond.operator}
-                                onChange={(e) => updateWhereCondition(cond.id, 'operator', e.target.value)}
-                                className="p-2 border border-gray-300 rounded text-sm"
-                            >
-                                <option value="=">=</option>
-                                <option value="!=">!=</option>
-                                <option value=">">&gt;</option>
-                                <option value="<">&lt;</option>
-                                <option value=">=">&gt;=</option>
-                                <option value="<=">&lt;=</option>
-                                <option value="LIKE">LIKE</option>
-                                <option value="IN">IN</option>
-                            </select>
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="text"
-                                    placeholder="Vrednost"
-                                    value={cond.value}
-                                    onChange={(e) => updateWhereCondition(cond.id, 'value', e.target.value)}
-                                    className="p-2 border border-gray-300 rounded text-sm flex-1"
-                                />
-                                <button
-                                    onClick={() => removeWhereCondition(cond.id)}
-                                    className="text-red-600 hover:text-red-800 text-sm font-bold"
-                                >
-                                    ✕
-                                </button>
-                            </div>
+                                Kopiraj
+                            </button>
                         </div>
+                        <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">{generatedSQL}</pre>
                     </div>
-                ))}
-            </div>
-
-            {/* GROUP BY */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                <div className="flex justify-between items-center mb-3">
-                    <label className="block text-sm font-bold text-gray-700">GROUP BY</label>
+                )}
+                <div className="flex justify-end">
                     <button
-                        onClick={addGroupBy}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-medium"
+                        onClick={handleGenerate}
+                        disabled={!mainTable || !generatedSQL}
+                        className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-2 px-6 rounded-lg font-medium text-sm"
                     >
-                        + Dodaj Kolonu
+                        Generiši SQL Upit
                     </button>
                 </div>
-                {groupByColumns.map(gb => (
-                    <div key={gb.id} className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-2">
-                        <Autocomplete
-                            options={[mainTable, ...joins.filter(j => j.table).map(j => j.table)].filter(Boolean)}
-                            value={gb.table}
-                            onChange={(value) => {
-                                updateGroupBy(gb.id, 'table', value);
-                                if (value) {
-                                    loadTableColumns(value);
-                                }
-                            }}
-                            placeholder="Tabela..."
-                            className="p-0"
-                        />
-                        <select
-                            value={gb.column}
-                            onChange={(e) => updateGroupBy(gb.id, 'column', e.target.value)}
-                            className="p-2 border border-gray-300 rounded text-sm flex-1"
-                        >
-                            <option value="">Izaberi kolonu...</option>
-                            {(tableColumns[gb.table || mainTable] || []).map(colName => (
-                                <option key={colName} value={colName}>{colName}</option>
-                            ))}
-                        </select>
-                        <button
-                            onClick={() => removeGroupBy(gb.id)}
-                            className="text-red-600 hover:text-red-800 text-sm font-bold"
-                        >
-                            ✕
-                        </button>
-                    </div>
-                ))}
-            </div>
-
-            {/* ORDER BY */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                <div className="flex justify-between items-center mb-3">
-                    <label className="block text-sm font-bold text-gray-700">ORDER BY</label>
-                    <button
-                        onClick={addOrderBy}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-medium"
-                    >
-                        + Dodaj Kolonu
-                    </button>
-                </div>
-                {orderByColumns.map(ob => (
-                    <div key={ob.id} className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-2">
-                        <Autocomplete
-                            options={[mainTable, ...joins.filter(j => j.table).map(j => j.table)].filter(Boolean)}
-                            value={ob.table}
-                            onChange={(value) => {
-                                updateOrderBy(ob.id, 'table', value);
-                                if (value) {
-                                    loadTableColumns(value);
-                                }
-                            }}
-                            placeholder="Tabela..."
-                            className="p-0"
-                        />
-                        <select
-                            value={ob.column}
-                            onChange={(e) => updateOrderBy(ob.id, 'column', e.target.value)}
-                            className="p-2 border border-gray-300 rounded text-sm flex-1"
-                        >
-                            <option value="">Izaberi kolonu...</option>
-                            {(tableColumns[ob.table || mainTable] || []).map(colName => (
-                                <option key={colName} value={colName}>{colName}</option>
-                            ))}
-                        </select>
-                        <select
-                            value={ob.direction}
-                            onChange={(e) => updateOrderBy(ob.id, 'direction', e.target.value)}
-                            className="p-2 border border-gray-300 rounded text-sm"
-                        >
-                            <option value="ASC">ASC</option>
-                            <option value="DESC">DESC</option>
-                        </select>
-                        <button
-                            onClick={() => removeOrderBy(ob.id)}
-                            className="text-red-600 hover:text-red-800 text-sm font-bold"
-                        >
-                            ✕
-                        </button>
-                    </div>
-                ))}
-            </div>
-
-            {/* SQL Preview */}
-            {generatedSQL && (
-                <div className="bg-gray-900 text-green-400 p-4 rounded-xl shadow-sm border border-gray-700">
-                    <div className="flex justify-between items-center mb-2">
-                        <label className="block text-sm font-bold text-gray-300">Generisani SQL Upit</label>
-                        <button
-                            onClick={() => {
-                                navigator.clipboard.writeText(generatedSQL);
-                                alert('SQL upit kopiran u clipboard!');
-                            }}
-                            className="text-xs text-gray-400 hover:text-gray-200"
-                        >
-                            Kopiraj
-                        </button>
-                    </div>
-                    <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">{generatedSQL}</pre>
-                </div>
-            )}
-
-            {/* Generate Button */}
-            <div className="flex justify-end gap-2">
-                <button
-                    onClick={handleGenerate}
-                    disabled={!mainTable || !generatedSQL}
-                    className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-2 px-6 rounded-lg font-medium text-sm"
-                >
-                    Generiši SQL Upit
-                </button>
             </div>
         </div>
     );

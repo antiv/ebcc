@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const EditRowModal = ({ isOpen, onClose, onSave, columns, initialData }) => {
+    const { t } = useTranslation();
     const [formData, setFormData] = useState({});
 
     useEffect(() => {
@@ -39,7 +41,7 @@ const EditRowModal = ({ isOpen, onClose, onSave, columns, initialData }) => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-fade-in">
                 <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50 rounded-t-xl">
-                    <h3 className="text-xl font-bold text-gray-800">Izmeni Red</h3>
+                    <h3 className="text-xl font-bold text-gray-800">{t('editRow.title')}</h3>
                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                     </button>
@@ -65,8 +67,8 @@ const EditRowModal = ({ isOpen, onClose, onSave, columns, initialData }) => {
                 </form>
 
                 <div className="p-6 border-t border-gray-200 bg-gray-50 rounded-b-xl flex justify-end gap-3">
-                    <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 font-medium transition">Otkaži</button>
-                    <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium shadow-md transition transform active:scale-95">Sačuvaj Izmene</button>
+                    <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 font-medium transition">{t('common.cancel')}</button>
+                    <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium shadow-md transition transform active:scale-95">{t('editRow.saveChanges')}</button>
                 </div>
             </div>
         </div>

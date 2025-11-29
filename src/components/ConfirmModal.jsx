@@ -1,6 +1,8 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, type = 'confirm' }) => {
+    const { t } = useTranslation();
     if (!isOpen) return null;
 
     const isAlert = type === 'alert';
@@ -24,7 +26,7 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, type = 'conf
                             </svg>
                         )}
                     </div>
-                    <h3 className="text-lg font-bold text-gray-800">{title || (isAlert ? "Obaveštenje" : "Potvrda")}</h3>
+                    <h3 className="text-lg font-bold text-gray-800">{title || (isAlert ? t('modals.notification') : t('common.confirm'))}</h3>
                 </div>
 
                 <div className="p-6">
@@ -33,10 +35,10 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, type = 'conf
 
                 <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
                     {!isAlert && (
-                        <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 font-medium transition text-sm">Otkaži</button>
+                        <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 font-medium transition text-sm">{t('common.cancel')}</button>
                     )}
                     <button onClick={handleConfirm} className={`px-4 py-2 ${isAlert ? 'bg-blue-600 hover:bg-blue-700' : 'bg-red-600 hover:bg-red-700'} text-white rounded-lg font-medium shadow-md transition transform active:scale-95 text-sm`}>
-                        {isAlert ? 'U redu' : 'Potvrdi'}
+                        {isAlert ? t('common.ok') : t('common.confirm')}
                     </button>
                 </div>
             </div>

@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import Papa from 'papaparse';
 import Pagination from './Pagination';
 import { PAGE_SIZE } from '../constants';
-import { getLatLonIndices } from '../utils/helpers';
+import { getLatLonIndices, parseCoordinate } from '../utils/helpers';
 
 const DataTable = ({ columns, data, title, enableMapsExport = true, className = "", stickyHeader = false, rowAction = null, columnRoles = {}, stickyColumns = 0, onAlert = null }) => {
+    const { t } = useTranslation();
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState("");
     const [sortCol, setSortCol] = useState(null);
@@ -78,10 +80,11 @@ const DataTable = ({ columns, data, title, enableMapsExport = true, className = 
 
     const exportCSV = (mode) => {
         if (!filteredData || filteredData.length === 0) {
+            const message = t('dataTable.noDataForExport');
             if (onAlert) {
-                onAlert("Nema podataka za izvoz.");
+                onAlert(message);
             } else {
-                alert("Nema podataka za izvoz.");
+                alert(message);
             }
             return;
         }
@@ -97,16 +100,19 @@ const DataTable = ({ columns, data, title, enableMapsExport = true, className = 
         } else if (mode === 'google') {
             const { latIdx, lonIdx } = getLatLonIndices(columns, columnRoles);
             if (latIdx === -1 || lonIdx === -1) {
+                const message = t('dataTable.latLonNotFound');
                 if (onAlert) {
-                    onAlert("Greška: Nisu pronađene kolone za Latitudu i Longitudu.");
+                    onAlert(message);
                 } else {
-                    alert("Greška: Nisu pronađene kolone za Latitudu i Longitudu.");
+                    alert(message);
                 }
                 return;
             }
             exportData = filteredData.map(row => {
                 let obj = {};
-                obj["WKT"] = `POINT(${row[lonIdx] || 0} ${row[latIdx] || 0})`;
+                const lon = parseCoordinate(row[lonIdx]);
+                const lat = parseCoordinate(row[latIdx]);
+                obj["WKT"] = `POINT(${lon} ${lat})`;
                 columns.forEach((col, i) => obj[col] = row[i]);
                 return obj;
             });
@@ -130,34 +136,34 @@ const DataTable = ({ columns, data, title, enableMapsExport = true, className = 
             <div className="p-4 border-b border-gray-200 flex flex-col md:flex-row gap-4 items-center justify-between bg-gray-50 flex-shrink-0">
                 <div className="flex flex-col md:flex-row md:items-center gap-4 w-full">
                     <div className="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center gap-2 whitespace-nowrap">
-                        {title || "Rezultati"}
+                        {title || t('dataTable.results')}
                         <span className="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded-full">{filteredData.length}</span>
                     </div>
                     <div className="flex items-center gap-2">
                         <button onClick={() => exportCSV('standard')} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition shadow-sm">
-                            <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> CSV
+                            <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg> {t('dataTable.exportCsv')}
                         </button>
                         {enableMapsExport && (
                             <button onClick={() => exportCSV('google')} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition shadow-sm">
-                                <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" /></svg> Maps CSV
+                                <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" /></svg> {t('dataTable.exportMapsCsv')}
                             </button>
                         )}
                         <div className="border-l border-gray-300 h-6 mx-1"></div>
                         <button
                             onClick={() => setViewMode(viewMode === 'pagination' ? 'infinite' : 'pagination')}
                             className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-2 transition shadow-sm"
-                            title={viewMode === 'pagination' ? 'Prebaci na beskonačno skrolovanje' : 'Prebaci na straničenje'}
+                            title={viewMode === 'pagination' ? t('dataTable.switchToInfinite') : t('dataTable.switchToPagination')}
                         >
                             {viewMode === 'pagination' ? (
-                                <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path></svg> Infinite Scroll</>
+                                <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path></svg> {t('dataTable.infiniteScroll')}</>
                             ) : (
-                                <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg> Straničenje</>
+                                <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg> {t('dataTable.pagination')}</>
                             )}
                         </button>
                     </div>
                 </div>
                 <div className="relative w-full md:w-64 mt-2 md:mt-0">
-                    <input type="text" placeholder="Pretraži..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <input type="text" placeholder={t('common.search')} value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                     <svg className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
             </div>
@@ -180,7 +186,7 @@ const DataTable = ({ columns, data, title, enableMapsExport = true, className = 
                                     </th>
                                 );
                             })}
-                            {rowAction && <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50 text-right">Akcije</th>}
+                            {rowAction && <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200 bg-gray-50 text-right">{t('common.actions')}</th>}
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -206,22 +212,22 @@ const DataTable = ({ columns, data, title, enableMapsExport = true, className = 
                                 </tr>
                             ))
                         ) : (
-                            <tr><td colSpan={columns.length + (rowAction ? 1 : 0)} className="px-6 py-12 text-center text-gray-400">Nema rezultata.</td></tr>
+                            <tr><td colSpan={columns.length + (rowAction ? 1 : 0)} className="px-6 py-12 text-center text-gray-400">{t('common.noResults')}</td></tr>
                         )}
                         {viewMode === 'infinite' && visibleRows < sortedData.length && (
-                            <tr><td colSpan={columns.length + (rowAction ? 1 : 0)} className="px-6 py-4 text-center text-gray-400 text-sm">Učitavanje...</td></tr>
+                            <tr><td colSpan={columns.length + (rowAction ? 1 : 0)} className="px-6 py-4 text-center text-gray-400 text-sm">{t('common.loadingData')}</td></tr>
                         )}
                     </tbody>
                 </table>
             </div>
             {viewMode === 'pagination' ? (
                 <div className="p-3 border-t border-gray-200 bg-gray-50 flex items-center justify-between flex-shrink-0">
-                    <div className="text-xs text-gray-500">Prikaz {Math.min((page - 1) * PAGE_SIZE + 1, filteredData.length)} - {Math.min(page * PAGE_SIZE, filteredData.length)} od {filteredData.length}</div>
+                    <div className="text-xs text-gray-500">{t('dataTable.showing', { start: Math.min((page - 1) * PAGE_SIZE + 1, filteredData.length), end: Math.min(page * PAGE_SIZE, filteredData.length), total: filteredData.length })}</div>
                     <Pagination currentPage={page} totalCount={filteredData.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
                 </div>
             ) : (
                 <div className="p-3 border-t border-gray-200 bg-gray-50 flex items-center justify-center flex-shrink-0">
-                    <div className="text-xs text-gray-500">Prikazano {Math.min(visibleRows, filteredData.length)} od {filteredData.length} rezultata</div>
+                    <div className="text-xs text-gray-500">{t('dataTable.showingInfinite', { visible: Math.min(visibleRows, filteredData.length), total: filteredData.length })}</div>
                 </div>
             )}
         </div>

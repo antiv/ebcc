@@ -1,22 +1,25 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import Autocomplete from './Autocomplete';
 
-const AGGREGATE_FUNCTIONS = [
-    { value: '', label: 'Nema' },
-    { value: 'COUNT', label: 'COUNT' },
-    { value: 'SUM', label: 'SUM' },
-    { value: 'AVG', label: 'AVG' },
-    { value: 'MAX', label: 'MAX' },
-    { value: 'MIN', label: 'MIN' }
-];
-
-const JOIN_TYPES = [
-    { value: 'INNER', label: 'INNER JOIN' },
-    { value: 'LEFT', label: 'LEFT JOIN' },
-    { value: 'RIGHT', label: 'RIGHT JOIN' }
-];
-
 const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
+    const { t } = useTranslation();
+    
+    const AGGREGATE_FUNCTIONS = [
+        { value: '', label: t('queryBuilder.none') },
+        { value: 'COUNT', label: 'COUNT' },
+        { value: 'SUM', label: 'SUM' },
+        { value: 'AVG', label: 'AVG' },
+        { value: 'MAX', label: 'MAX' },
+        { value: 'MIN', label: 'MIN' }
+    ];
+
+    const JOIN_TYPES = [
+        { value: 'INNER', label: 'INNER JOIN' },
+        { value: 'LEFT', label: 'LEFT JOIN' },
+        { value: 'RIGHT', label: 'RIGHT JOIN' }
+    ];
+
     const [mainTable, setMainTable] = useState('');
     const [selectedColumns, setSelectedColumns] = useState([]);
     const [joins, setJoins] = useState([]);
@@ -309,23 +312,23 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
 
     const getSectionLabel = (section) => {
         switch(section) {
-            case 'table': return 'Glavna Tabela';
-            case 'columns': return 'Polja';
-            case 'joins': return 'Join Tabele';
-            case 'where': return 'WHERE Uslovi';
-            case 'groupby': return 'GROUP BY';
-            case 'orderby': return 'ORDER BY';
+            case 'table': return t('queryBuilder.mainTable');
+            case 'columns': return t('queryBuilder.fields');
+            case 'joins': return t('queryBuilder.joinTables');
+            case 'where': return t('queryBuilder.whereConditions');
+            case 'groupby': return t('queryBuilder.groupBy');
+            case 'orderby': return t('queryBuilder.orderBy');
             default: return '';
         }
     };
 
     const sections = [
-        { id: 'table', label: 'Glavna Tabela', icon: '📊' },
-        { id: 'columns', label: 'Polja', icon: '📋' },
-        { id: 'joins', label: 'Join Tabele', icon: '🔗' },
-        { id: 'where', label: 'WHERE Uslovi', icon: '🔍' },
-        { id: 'groupby', label: 'GROUP BY', icon: '📊' },
-        { id: 'orderby', label: 'ORDER BY', icon: '⬆️' }
+        { id: 'table', label: t('queryBuilder.mainTable'), icon: '📊' },
+        { id: 'columns', label: t('queryBuilder.fields'), icon: '📋' },
+        { id: 'joins', label: t('queryBuilder.joinTables'), icon: '🔗' },
+        { id: 'where', label: t('queryBuilder.whereConditions'), icon: '🔍' },
+        { id: 'groupby', label: t('queryBuilder.groupBy'), icon: '📊' },
+        { id: 'orderby', label: t('queryBuilder.orderBy'), icon: '⬆️' }
     ];
 
     return (
@@ -334,7 +337,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                 {/* Left Panel: Filter Categories */}
                 <div className="w-64 border-r border-gray-200 bg-gray-50 overflow-y-auto">
                     <div className="p-4 border-b border-gray-200 bg-white">
-                        <h3 className="text-sm font-bold text-gray-700">Kategorije</h3>
+                        <h3 className="text-sm font-bold text-gray-700">{t('queryBuilder.categories')}</h3>
                     </div>
                     <div className="p-2">
                         {sections.map(section => {
@@ -382,9 +385,9 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                             <div>
                                 <div className="flex items-center gap-2 mb-4">
                                     <span className="text-lg">📊</span>
-                                    <h3 className="text-lg font-bold text-gray-800">Glavna Tabela</h3>
+                                    <h3 className="text-lg font-bold text-gray-800">{t('queryBuilder.mainTable')}</h3>
                                 </div>
-                                <p className="text-sm text-gray-600 mb-4">Izaberite glavnu tabelu za upit.</p>
+                                <p className="text-sm text-gray-600 mb-4">{t('queryBuilder.mainTableDescription')}</p>
                                 <Autocomplete
                                     options={dbTables}
                                     value={mainTable}
@@ -394,11 +397,11 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                             loadTableColumns(value);
                                         }
                                     }}
-                                    placeholder="Unesite naziv tabele..."
+                                    placeholder={t('queryBuilder.enterTableName')}
                                     className="w-full max-w-md"
                                 />
                                 {mainTable && !dbTables.includes(mainTable) && (
-                                    <p className="text-xs text-red-600 mt-2">Tabela "{mainTable}" ne postoji u bazi.</p>
+                                    <p className="text-xs text-red-600 mt-2">{t('queryBuilder.tableDoesNotExist', { name: mainTable })}</p>
                                 )}
                             </div>
                         )}
@@ -408,19 +411,19 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-2">
                                         <span className="text-lg">📋</span>
-                                        <h3 className="text-lg font-bold text-gray-800">Polja</h3>
+                                        <h3 className="text-lg font-bold text-gray-800">{t('queryBuilder.fields')}</h3>
                                     </div>
                                     <button
                                         onClick={addColumn}
                                         className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
                                     >
-                                        + Dodaj Polje
+                                        {t('queryBuilder.addField')}
                                     </button>
                                 </div>
-                                <p className="text-sm text-gray-600 mb-4">Izaberite polja koja će biti uključena u upit. Ako ne izaberete nijedno, koristiće se * (sva polja).</p>
+                                <p className="text-sm text-gray-600 mb-4">{t('queryBuilder.fieldsDescription')}</p>
                                 {selectedColumns.length === 0 && (
                                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
-                                        <p className="text-sm text-gray-500 italic">Nema izabranih polja. Koristiće se * (sva polja).</p>
+                                        <p className="text-sm text-gray-500 italic">{t('queryBuilder.noFieldsSelected')}</p>
                                     </div>
                                 )}
                                 <div className="space-y-3">
@@ -436,7 +439,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                                             loadTableColumns(value);
                                                         }
                                                     }}
-                                                    placeholder="Tabela..."
+                                                    placeholder={t('queryBuilder.table')}
                                                     className="p-0"
                                                 />
                                                 <select
@@ -444,7 +447,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                                     onChange={(e) => updateColumn(col.id, 'column', e.target.value)}
                                                     className="p-2 border border-gray-300 rounded-lg text-sm"
                                                 >
-                                                    <option value="">Izaberi kolonu...</option>
+                                                    <option value="">{t('queryBuilder.selectColumn')}</option>
                                                     {(tableColumns[col.table || mainTable] || []).map(colName => (
                                                         <option key={colName} value={colName}>{colName}</option>
                                                     ))}
@@ -460,7 +463,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                                 </select>
                                                 <input
                                                     type="text"
-                                                    placeholder="Alias (opciono)"
+                                                    placeholder={t('queryBuilder.aliasOptional')}
                                                     value={col.alias}
                                                     onChange={(e) => updateColumn(col.id, 'alias', e.target.value)}
                                                     className="p-2 border border-gray-300 rounded-lg text-sm"
@@ -494,19 +497,19 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-2">
                                         <span className="text-lg">🔗</span>
-                                        <h3 className="text-lg font-bold text-gray-800">Join Tabele</h3>
+                                        <h3 className="text-lg font-bold text-gray-800">{t('queryBuilder.joinTables')}</h3>
                                     </div>
                                     <button
                                         onClick={addJoin}
                                         className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
                                     >
-                                        + Dodaj Join
+                                        {t('queryBuilder.addJoin')}
                                     </button>
                                 </div>
-                                <p className="text-sm text-gray-600 mb-4">Dodajte join operacije za povezivanje tabela.</p>
+                                <p className="text-sm text-gray-600 mb-4">{t('queryBuilder.joinDescription')}</p>
                                 {joins.length === 0 && (
                                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
-                                        <p className="text-sm text-gray-500">Nema dodatih join operacija.</p>
+                                        <p className="text-sm text-gray-500">{t('queryBuilder.noJoins')}</p>
                                     </div>
                                 )}
                                 <div className="space-y-3">
@@ -536,7 +539,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                                                 loadTableColumns(value);
                                                             }
                                                         }}
-                                                        placeholder="Izaberi tabelu..."
+                                                        placeholder={t('queryBuilder.selectTable')}
                                                         className="p-0"
                                                     />
                                                     <select
@@ -557,7 +560,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                                         className="p-2 border border-gray-300 rounded-lg text-sm"
                                                         disabled={!leftTable}
                                                     >
-                                                        <option value="">Kolona...</option>
+                                                        <option value="">{t('queryBuilder.column')}</option>
                                                         {(tableColumns[leftTable] || []).map(col => (
                                                             <option key={col} value={col}>{col}</option>
                                                         ))}
@@ -568,7 +571,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                                         className="p-2 border border-gray-300 rounded-lg text-sm"
                                                         disabled={!rightTable}
                                                     >
-                                                        <option value="">Kolona...</option>
+                                                        <option value="">{t('queryBuilder.column')}</option>
                                                         {(tableColumns[rightTable] || []).map(col => (
                                                             <option key={col} value={col}>{col}</option>
                                                         ))}
@@ -592,19 +595,19 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-2">
                                         <span className="text-lg">🔍</span>
-                                        <h3 className="text-lg font-bold text-gray-800">WHERE Uslovi</h3>
+                                        <h3 className="text-lg font-bold text-gray-800">{t('queryBuilder.whereConditions')}</h3>
                                     </div>
                                     <button
                                         onClick={addWhereCondition}
                                         className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
                                     >
-                                        + Dodaj Uslov
+                                        {t('queryBuilder.addCondition')}
                                     </button>
                                 </div>
-                                <p className="text-sm text-gray-600 mb-4">Dodajte uslove za filtriranje rezultata.</p>
+                                <p className="text-sm text-gray-600 mb-4">{t('queryBuilder.whereDescription')}</p>
                                 {whereConditions.length === 0 && (
                                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
-                                        <p className="text-sm text-gray-500">Nema dodatih WHERE uslova.</p>
+                                        <p className="text-sm text-gray-500">{t('queryBuilder.noWhereConditions')}</p>
                                     </div>
                                 )}
                                 <div className="space-y-3">
@@ -630,7 +633,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                                             loadTableColumns(value);
                                                         }
                                                     }}
-                                                    placeholder="Tabela..."
+                                                    placeholder={t('queryBuilder.table')}
                                                     className="p-0"
                                                 />
                                                 <select
@@ -638,7 +641,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                                     onChange={(e) => updateWhereCondition(cond.id, 'column', e.target.value)}
                                                     className="p-2 border border-gray-300 rounded-lg text-sm"
                                                 >
-                                                    <option value="">Izaberi kolonu...</option>
+                                                    <option value="">{t('queryBuilder.selectColumn')}</option>
                                                     {(tableColumns[cond.table || mainTable] || []).map(colName => (
                                                         <option key={colName} value={colName}>{colName}</option>
                                                     ))}
@@ -660,7 +663,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                                 <div className="flex items-center gap-2">
                                                     <input
                                                         type="text"
-                                                        placeholder="Vrednost"
+                                                        placeholder={t('common.value')}
                                                         value={cond.value}
                                                         onChange={(e) => updateWhereCondition(cond.id, 'value', e.target.value)}
                                                         className="p-2 border border-gray-300 rounded-lg text-sm flex-1"
@@ -684,19 +687,19 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-2">
                                         <span className="text-lg">📊</span>
-                                        <h3 className="text-lg font-bold text-gray-800">GROUP BY</h3>
+                                        <h3 className="text-lg font-bold text-gray-800">{t('queryBuilder.groupBy')}</h3>
                                     </div>
                                     <button
                                         onClick={addGroupBy}
                                         className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
                                     >
-                                        + Dodaj Kolonu
+                                        {t('queryBuilder.addColumn')}
                                     </button>
                                 </div>
-                                <p className="text-sm text-gray-600 mb-4">Izaberite kolone za grupisanje rezultata.</p>
+                                <p className="text-sm text-gray-600 mb-4">{t('queryBuilder.groupByDescription')}</p>
                                 {groupByColumns.length === 0 && (
                                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
-                                        <p className="text-sm text-gray-500">Nema dodatih GROUP BY kolona.</p>
+                                        <p className="text-sm text-gray-500">{t('queryBuilder.noGroupByColumns')}</p>
                                     </div>
                                 )}
                                 <div className="space-y-3">
@@ -711,7 +714,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                                         loadTableColumns(value);
                                                     }
                                                 }}
-                                                placeholder="Tabela..."
+                                                placeholder={t('queryBuilder.table')}
                                                 className="p-0 flex-1"
                                             />
                                             <select
@@ -719,7 +722,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                                 onChange={(e) => updateGroupBy(gb.id, 'column', e.target.value)}
                                                 className="p-2 border border-gray-300 rounded-lg text-sm flex-1"
                                             >
-                                                <option value="">Izaberi kolonu...</option>
+                                                <option value="">{t('queryBuilder.selectColumn')}</option>
                                                 {(tableColumns[gb.table || mainTable] || []).map(colName => (
                                                     <option key={colName} value={colName}>{colName}</option>
                                                 ))}
@@ -741,19 +744,19 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-2">
                                         <span className="text-lg">⬆️</span>
-                                        <h3 className="text-lg font-bold text-gray-800">ORDER BY</h3>
+                                        <h3 className="text-lg font-bold text-gray-800">{t('queryBuilder.orderBy')}</h3>
                                     </div>
                                     <button
                                         onClick={addOrderBy}
                                         className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
                                     >
-                                        + Dodaj Kolonu
+                                        {t('queryBuilder.addColumn')}
                                     </button>
                                 </div>
-                                <p className="text-sm text-gray-600 mb-4">Izaberite kolone za sortiranje rezultata.</p>
+                                <p className="text-sm text-gray-600 mb-4">{t('queryBuilder.orderByDescription')}</p>
                                 {orderByColumns.length === 0 && (
                                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
-                                        <p className="text-sm text-gray-500">Nema dodatih ORDER BY kolona.</p>
+                                        <p className="text-sm text-gray-500">{t('queryBuilder.noOrderByColumns')}</p>
                                     </div>
                                 )}
                                 <div className="space-y-3">
@@ -768,7 +771,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                                         loadTableColumns(value);
                                                     }
                                                 }}
-                                                placeholder="Tabela..."
+                                                placeholder={t('queryBuilder.table')}
                                                 className="p-0 flex-1"
                                             />
                                             <select
@@ -776,7 +779,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                                                 onChange={(e) => updateOrderBy(ob.id, 'column', e.target.value)}
                                                 className="p-2 border border-gray-300 rounded-lg text-sm flex-1"
                                             >
-                                                <option value="">Izaberi kolonu...</option>
+                                                <option value="">{t('queryBuilder.selectColumn')}</option>
                                                 {(tableColumns[ob.table || mainTable] || []).map(colName => (
                                                     <option key={colName} value={colName}>{colName}</option>
                                                 ))}
@@ -809,21 +812,21 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                 {generatedSQL && (
                     <div className="mb-4 bg-gray-900 text-green-400 p-4 rounded-lg border border-gray-700">
                         <div className="flex justify-between items-center mb-2">
-                            <label className="block text-sm font-bold text-gray-300">Generisani SQL Upit</label>
+                            <label className="block text-sm font-bold text-gray-300">{t('queryBuilder.generatedSqlQuery')}</label>
                             <button
                             onClick={() => {
                                 navigator.clipboard.writeText(generatedSQL);
                                 // Success feedback - could use a toast notification instead
                                 const button = document.activeElement;
                                 const originalText = button.textContent;
-                                button.textContent = 'Kopirano!';
+                                button.textContent = t('queryBuilder.copied');
                                 setTimeout(() => {
-                                    button.textContent = originalText;
+                                    button.textContent = t('queryBuilder.copy');
                                 }, 2000);
                             }}
                                 className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded"
                             >
-                                Kopiraj
+                                {t('queryBuilder.copy')}
                             </button>
                         </div>
                         <pre className="text-xs font-mono overflow-x-auto whitespace-pre-wrap">{generatedSQL}</pre>
@@ -835,7 +838,7 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                         disabled={!mainTable || !generatedSQL}
                         className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-2 px-6 rounded-lg font-medium text-sm"
                     >
-                        Generiši SQL Upit
+                        {t('queryBuilder.generateSqlQuery')}
                     </button>
                 </div>
             </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import initSqlJs from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import Papa from 'papaparse';
@@ -14,6 +15,7 @@ import { getLatLonIndices } from './utils/helpers';
 const APP_MODE = import.meta.env.VITE_APP_MODE || 'ebcc';
 
 function App() {
+    const { t, i18n } = useTranslation();
     const [db, setDb] = useState(null);
     const [error, setError] = useState(null);
     const [successMsg, setSuccessMsg] = useState(null);
@@ -56,7 +58,7 @@ function App() {
             try {
                 const SQL = await initSqlJs({ locateFile: () => sqlWasmUrl });
                 setSqlInstance(SQL);
-            } catch (err) { setError("Greška pri učitavanju SQL biblioteke: " + err.message); }
+            } catch (err) { setError(t('errors.sqlLibraryError', { error: err.message })); }
         };
         init();
     }, []);
@@ -109,7 +111,7 @@ function App() {
             newDb.exec(INITIAL_SCHEMA);
         } catch (e) {
             console.error("Error initializing schema:", e);
-            setError("Greška pri inicijalizaciji šeme: " + e.message);
+            setError(t('errors.schemaInitError', { error: e.message }));
         }
 
         // 1. Init History Table
@@ -265,8 +267,8 @@ function App() {
 
                 initializeDatabase(newDb);
 
-                setSuccessMsg("Baza uspešno učitana.");
-            } catch (err) { setError("Nije moguće otvoriti bazu."); }
+                setSuccessMsg(t('app.databaseLoaded'));
+            } catch (err) { setError(t('app.cannotOpenDatabase')); }
         };
         reader.readAsArrayBuffer(file);
     };
@@ -278,17 +280,17 @@ function App() {
             setDb(newDb);
             setFileName("nova_baza.db");
             initializeDatabase(newDb);
-            setSuccessMsg("Nova prazna baza je uspešno kreirana.");
+            setSuccessMsg(t('app.newDatabaseCreated'));
         } catch (err) {
-            setError("Greška pri kreiranju nove baze: " + err.message);
+            setError(t('errors.createTableError', { error: err.message }));
         }
     };
 
     const resetDatabase = () => {
         setConfirmModal({
             isOpen: true,
-            title: "Zatvaranje Baze",
-            message: "Da li ste sigurni da želite da zatvorite bazu? Nesačuvane izmene će biti izgubljene.",
+            title: t('app.closeDatabase'),
+            message: t('app.closeDatabaseConfirm'),
             onConfirm: () => {
                 setDb(null);
                 setFileName("");
@@ -324,16 +326,16 @@ function App() {
     const handleDropTable = (tableName) => {
         setConfirmModal({
             isOpen: true,
-            title: "Brisanje Tabele",
-            message: `Da li ste sigurni da želite trajno da obrišete tabelu '${tableName}'?\nOva akcija je nepovratna!`,
+            title: t('database.deleteTable'),
+            message: t('database.deleteTableConfirm', { name: tableName }),
             onConfirm: () => {
                 try {
                     db.exec(`DROP TABLE "${tableName}"`);
-                    setSuccessMsg(`Tabela '${tableName}' je uspešno obrisana.`);
+                    setSuccessMsg(t('database.tableDeleted', { name: tableName }));
                     fetchDbTables(); // Refresh list
                     setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null, type: 'confirm' });
                 } catch (e) {
-                    setError("Greška pri brisanju tabele: " + e.message);
+                    setError(t('errors.deleteTableError', { error: e.message }));
                     setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null, type: 'confirm' });
                 }
             }
@@ -363,11 +365,11 @@ function App() {
 
     const saveQuery = () => {
         if (!db) {
-            setError('Baza nije učitana.');
+            setError(t('sql.databaseNotLoaded'));
             return;
         }
         if (!queryName.trim() || !query.trim()) {
-            setError('Molimo unesite naziv upita.');
+            setError(t('sql.enterQueryName'));
             return;
         }
 
@@ -387,22 +389,22 @@ function App() {
             setSavedQueries([...savedQueries, newQuery]);
             setQueryName('');
             setShowSaveQueryDialog(false);
-            setSuccessMsg('Upit uspešno sačuvan!');
+            setSuccessMsg(t('sql.querySaved'));
         } catch (e) {
             console.error('Error saving query:', e);
-            setError('Greška pri čuvanju upita: ' + e.message);
+            setError(t('errors.saveQueryError', { error: e.message }));
         }
     };
 
     const deleteQuery = (id) => {
         if (!db) {
-            setError('Baza nije učitana.');
+            setError(t('sql.databaseNotLoaded'));
             return;
         }
         setConfirmModal({
             isOpen: true,
-            title: "Brisanje Upita",
-            message: 'Da li ste sigurni da želite da obrišete ovaj upit?',
+            title: t('sql.deleteQuery'),
+            message: t('sql.deleteQueryConfirm'),
             onConfirm: () => {
                 try {
                     const stmt = db.prepare("DELETE FROM app_saved_queries WHERE id = ?");
@@ -411,11 +413,11 @@ function App() {
 
                     const updated = savedQueries.filter(q => q.id !== id);
                     setSavedQueries(updated);
-                    setSuccessMsg('Upit uspešno obrisan.');
+                    setSuccessMsg(t('sql.queryDeleted'));
                     setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null });
                 } catch (e) {
                     console.error('Error deleting query:', e);
-                    setError('Greška pri brisanju upita: ' + e.message);
+                    setError(t('errors.deleteQueryError', { error: e.message }));
                     setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null });
                 }
             }
@@ -429,11 +431,11 @@ function App() {
 
     const saveEditedQuery = (id) => {
         if (!db) {
-            setError('Baza nije učitana.');
+            setError(t('sql.databaseNotLoaded'));
             return;
         }
         if (!editingQueryName.trim()) {
-            setError('Naziv upita ne može biti prazan.');
+            setError(t('sql.queryNameCannotBeEmpty'));
             return;
         }
 
@@ -448,10 +450,10 @@ function App() {
             setSavedQueries(updated);
             setEditingQueryId(null);
             setEditingQueryName('');
-            setSuccessMsg('Naziv upita uspešno izmenjen.');
+            setSuccessMsg(t('sql.queryNameUpdated'));
         } catch (e) {
             console.error('Error updating query:', e);
-            setError('Greška pri izmeni naziva upita: ' + e.message);
+            setError(t('errors.updateQueryError', { error: e.message }));
         }
     };
 
@@ -472,8 +474,8 @@ function App() {
         if (!backup_table_name) {
             setConfirmModal({
                 isOpen: true,
-                title: "Greška",
-                message: "Nije moguće poništiti ovaj uvoz jer naziv backup tabele nije sačuvan.",
+                title: t('modals.error'),
+                message: t('import.undoImportError'),
                 type: 'alert',
                 onConfirm: null
             });
@@ -481,8 +483,8 @@ function App() {
         }
         setConfirmModal({
             isOpen: true,
-            title: "Poništavanje Uvoza",
-            message: `PAŽNJA: Ovo će obrisati ${row_count} redova iz tabele '${target_table}' koji su uvezeni iz fajla '${filename}'.\n\nDa li ste sigurni da želite da nastavite?`,
+            title: t('import.undoImport'),
+            message: t('import.undoImportWarning', { count: row_count, table: target_table, filename }),
             onConfirm: () => {
                 try {
                     const checkTable = db.exec(`SELECT name FROM sqlite_master WHERE type='table' AND name='${backup_table_name}'`);
@@ -510,12 +512,12 @@ function App() {
                     db.exec(`DROP TABLE IF EXISTS "${backup_table_name}"`);
                     db.exec("COMMIT");
 
-                    setSuccessMsg("Uvoz uspešno poništen. Podaci su obrisani iz glavne tabele i zapis je uklonjen iz istorije.");
+                    setSuccessMsg(t('import.undoImportSuccess'));
                     refreshImportLog(db);
                     setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null, type: 'confirm' });
                 } catch (err) {
                     db.exec("ROLLBACK");
-                    setError("Greška pri poništavanju uvoza: " + err.message);
+                    setError(t('errors.undoImportError', { error: err.message }));
                     setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null, type: 'confirm' });
                 }
             }
@@ -566,8 +568,8 @@ function App() {
             stmt.run([JSON.stringify(configToSave)]);
             stmt.free();
             db.exec("COMMIT");
-            setSuccessMsg("Podešavanja su uspešno sačuvana u bazu!");
-        } catch (err) { setError("Greška pri čuvanju podešavanja: " + err.message); }
+            setSuccessMsg(t('app.settings.settingsSaved'));
+        } catch (err) { setError(t('errors.saveSettingsError', { error: err.message })); }
     };
 
     const fetchViewerData = () => {
@@ -588,7 +590,7 @@ function App() {
                 setViewerData([]);
                 setViewerColumns(["rowid", ...cols]);
             }
-        } catch (err) { if (err.message.includes("no such table")) { setViewerData([]); setViewerColumns([]); } else setError("Greška pri učitavanju tabele: " + err.message); } finally { setViewerLoading(false); }
+        } catch (err) { if (err.message.includes("no such table")) { setViewerData([]); setViewerColumns([]); } else setError(t('errors.loadTableError', { error: err.message })); } finally { setViewerLoading(false); }
     };
     useEffect(() => { if (activeTab === 'viewer') fetchViewerData(); }, [activeTab, viewerTable, db]);
 
@@ -634,7 +636,7 @@ function App() {
         const mappingsToUse = overrideMappings || mappings;
         if (!db || !csvFile || !tableToUse) return;
         const checkRes = db.exec(`SELECT count(*) as cnt FROM app_import_history WHERE filename = '${csvFile.name}' AND target_table = '${tableToUse}'`);
-        if (checkRes[0].values[0][0] > 0) { setError(`UPOZORENJE: Fajl '${csvFile.name}' je već uvezen u tabelu '${tableToUse}'!`); return; }
+        if (checkRes[0].values[0][0] > 0) { setError(t('import.fileAlreadyImported', { filename: csvFile.name, table: tableToUse })); return; }
         setIsProcessing(true);
         preprocessCsv(csvFile, (cleanedFile) => {
             Papa.parse(cleanedFile, {
@@ -655,12 +657,12 @@ function App() {
 
                         const targetMap = mappingsToUse[tableToUse];
                         let targetCols = [], selectCols = [];
-                        if (!targetMap) throw new Error("Mapiranje za ovu tabelu nije definisano.");
+                        if (!targetMap) throw new Error(t('import.mappingNotDefined'));
                         for (const [dbCol, csvOptions] of Object.entries(targetMap)) {
                             const match = headers.find(h => csvOptions.includes(h));
                             if (match) { targetCols.push(`"${dbCol}"`); selectCols.push(`"${match}"`); }
                         }
-                        if (targetCols.length === 0) throw new Error("Nije pronađena nijedna odgovarajuća kolona za mapiranje!");
+                        if (targetCols.length === 0) throw new Error(t('import.noMatchingColumns'));
 
                         // VALIDACIJA
                         const totalTargetCols = Object.keys(targetMap).length;
@@ -691,8 +693,8 @@ function App() {
                             setPendingImportAction({ continueImport, tempTableName, targetCols, selectCols, tableToUse, data, csvFile });
                             setConfirmModal({
                                 isOpen: true,
-                                title: "Upozorenje",
-                                message: `UPOZORENJE: Detektovano je poklapanje samo ${matchedCols} od ${totalTargetCols} kolona (${matchPercent}%) za tabelu '${tableToUse}'.\n\nVelika je verovatnoća da pokušavate uvoz pogrešnog fajla ili da mapiranja nisu ispravna.\n\nDa li sigurno želite da nastavite uvoz?`,
+                                title: t('modals.warning'),
+                                message: t('import.columnMatchingWarning', { matched: matchedCols, total: totalTargetCols, percent: matchPercent, table: tableToUse }),
                                 onConfirm: () => {
                                     if (pendingImportAction) {
                                         pendingImportAction.continueImport();
@@ -718,35 +720,35 @@ function App() {
 
                         db.exec("COMMIT"); // Commit at the very end
 
-                        setSuccessMsg(`Uspešno uvezeno ${data.length} redova iz '${csvFile.name}' u tabelu '${tableToUse}'.`);
+                        setSuccessMsg(t('import.importSuccess', { count: data.length, filename: csvFile.name, table: tableToUse }));
                         refreshImportLog(db);
                         setCsvFile(null);
                         setNewTableName(""); // Clear new table name after successful import
                     } catch (err) {
                         db.exec("ROLLBACK"); // Rollback on any error
-                        setError("Greška pri importu: " + err.message);
+                        setError(t('import.importError', { error: err.message }));
                     } finally {
                         setIsProcessing(false);
                     }
                 },
-                error: (err) => { setError("Greška pri čitanju CSV-a: " + err.message); setIsProcessing(false); }
+                error: (err) => { setError(t('errors.csvReadError', { error: err.message })); setIsProcessing(false); }
             });
         });
     };
 
     const handleImport = () => {
         if (!csvFile) {
-            setError("Molimo izaberite CSV fajl.");
+            setError(t('import.selectCsvFileError'));
             return;
         }
 
         if (targetTable === "__NEW_TABLE__") {
             if (!newTableName) {
-                setError("Molimo unesite naziv nove tabele.");
+                setError(t('import.enterTableNameError'));
                 return;
             }
             if (!/^[a-zA-Z0-9_]+$/.test(newTableName)) {
-                setError("Naziv tabele sme sadržati samo slova, brojeve i donju crtu.");
+                setError(t('import.invalidTableName'));
                 return;
             }
             // Create table first, then import
@@ -762,13 +764,13 @@ function App() {
         const fileToParse = csvFile;
 
         if (!fileToParse || !newTableName) {
-            setError("Molimo izaberite fajl i unesite naziv tabele.");
+            setError(t('import.enterTableNameError'));
             return;
         }
 
         // Basic validation for table name (alphanumeric + underscore)
         if (!/^[a-zA-Z0-9_]+$/.test(newTableName)) {
-            setError("Naziv tabele sme sadržati samo slova, brojeve i donju crtu.");
+            setError(t('import.invalidTableName'));
             return;
         }
 
@@ -778,13 +780,13 @@ function App() {
                 skipEmptyLines: true,
                 complete: (results) => {
                     if (results.data.length === 0) {
-                        setError("CSV fajl je prazan.");
+                        setError(t('errors.emptyCsv'));
                         return;
                     }
 
                     const headers = results.meta.fields;
                     if (!headers || headers.length === 0) {
-                        setError("Nije moguće detektovati kolone u CSV fajlu.");
+                        setError(t('errors.cannotDetectColumns'));
                         return;
                     }
 
@@ -832,16 +834,16 @@ function App() {
                             // Pass the updated mappings directly to avoid state race condition
                             processImport(newTableName, updatedMappings);
                         } else {
-                            setSuccessMsg(`Tabela '${newTableName}' je uspešno kreirana!`);
+                            setSuccessMsg(t('import.tableCreated', { name: newTableName }));
                             setNewTableName("");
                         }
                         fetchDbTables(); // Refresh table list
                     } catch (err) {
-                        setError("Greška pri kreiranju tabele: " + err.message);
+                        setError(t('errors.createTableError', { error: err.message }));
                     }
                 },
                 error: (err) => {
-                    setError("Greška pri parsiranju CSV-a: " + err.message);
+                    setError(t('errors.csvParseError', { error: err.message }));
                 }
             });
         });
@@ -873,16 +875,16 @@ function App() {
     const handleDeleteRow = (row) => {
         setConfirmModal({
             isOpen: true,
-            title: "Brisanje Reda",
-            message: "Da li ste sigurni da želite da obrišete ovaj red? Ova akcija je nepovratna.",
+            title: t('viewer.deleteRowConfirm'),
+            message: t('viewer.deleteRowMessage'),
             onConfirm: () => {
                 try {
                     const id = row[0];
                     db.exec(`DELETE FROM ${viewerTable} WHERE rowid = ${id}`);
-                    setSuccessMsg("Red uspešno obrisan.");
+                    setSuccessMsg(t('viewer.rowDeleted'));
                     fetchViewerData();
                 } catch (err) {
-                    setError("Greška pri brisanju reda: " + err.message);
+                    setError(t('errors.deleteRowError', { error: err.message }));
                 }
                 setConfirmModal({ ...confirmModal, isOpen: false });
             }
@@ -913,12 +915,12 @@ function App() {
             stmt.run(params);
             stmt.free();
 
-            setSuccessMsg("Red uspešno izmenjen.");
+            setSuccessMsg(t('viewer.rowUpdated'));
             setIsEditModalOpen(false);
             setEditingRow(null);
             fetchViewerData();
         } catch (err) {
-            setError("Greška pri čuvanju izmena: " + err.message);
+            setError(t('errors.saveRowError', { error: err.message }));
         }
     };
 
@@ -937,16 +939,26 @@ function App() {
         }
     };
 
-    if (!sqlInstance) return <div className="flex items-center justify-center h-screen text-gray-500">Učitavanje aplikacije...</div>;
+    if (!sqlInstance) return <div className="flex items-center justify-center h-screen text-gray-500">{t('common.loading')}</div>;
     if (!db) return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 relative">
+            <div className="absolute top-4 right-4">
+                <select
+                    value={i18n.language}
+                    onChange={(e) => i18n.changeLanguage(e.target.value)}
+                    className="px-3 py-2 rounded-lg text-sm font-medium bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 transition shadow-sm"
+                >
+                    <option value="sr">🇷🇸 SR</option>
+                    <option value="en">🇬🇧 EN</option>
+                </select>
+            </div>
             <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center animate-fade-in">
                 <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6"><svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg></div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-2">Podešavanje Baze</h2>
-                <p className="text-gray-500 mb-4">Učitaj svoj lokalni SQLite (.db) fajl da bi počeo.</p>
-                {lastUsedFile && <div className="mb-6 bg-yellow-50 text-yellow-800 p-3 rounded-lg text-sm border border-yellow-200 inline-block"><strong>Info:</strong> Poslednja korišćena baza je bila: <span className="font-mono">{lastUsedFile}</span>.<br /><span className="text-xs text-yellow-600">(Zbog bezbednosti browser-a, moraš ponovo izabrati fajl)</span></div>}
-                <label className="block w-full cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-6 rounded-xl transition transform hover:scale-105 mb-4">Izaberi Fajl Baze<input type="file" className="hidden" accept=".db,.sqlite,.sqlite3" onChange={handleFileUpload} /></label>
-                <button onClick={handleCreateEmptyDb} className="block w-full cursor-pointer bg-white border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-semibold py-4 px-6 rounded-xl transition transform hover:scale-105">Započni sa Praznom Bazom</button>
+                <h2 className="text-2xl font-bold text-gray-800 mb-2">{t('app.databaseSetup')}</h2>
+                <p className="text-gray-500 mb-4">{t('app.databaseSetupDescription')}</p>
+                {lastUsedFile && <div className="mb-6 bg-yellow-50 text-yellow-800 p-3 rounded-lg text-sm border border-yellow-200 inline-block"><strong>Info:</strong> {t('app.lastUsedFile')}: <span className="font-mono">{lastUsedFile}</span>.<br /><span className="text-xs text-yellow-600">{t('app.fileSecurityNote')}</span></div>}
+                <label className="block w-full cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-6 rounded-xl transition transform hover:scale-105 mb-4">{t('app.selectDatabaseFile')}<input type="file" className="hidden" accept=".db,.sqlite,.sqlite3" onChange={handleFileUpload} /></label>
+                <button onClick={handleCreateEmptyDb} className="block w-full cursor-pointer bg-white border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-semibold py-4 px-6 rounded-xl transition transform hover:scale-105">{t('app.createEmptyDatabase')}</button>
                 {error && <p className="mt-4 text-red-500 text-sm bg-red-50 p-2 rounded">{error}</p>}
             </div>
         </div>
@@ -955,17 +967,25 @@ function App() {
     return (
         <div className="min-h-screen flex flex-col max-w-[95%] mx-auto bg-white shadow-2xl my-4 rounded-xl overflow-hidden">
             <header className="bg-slate-800 text-white p-4 flex justify-between items-center">
-                <div><h1 className="text-xl font-bold">BioData Manager</h1><div className="flex items-center gap-2 text-xs text-slate-400 mt-1"><span className="w-2 h-2 rounded-full bg-green-500"></span>{fileName}</div></div>
+                <div><h1 className="text-xl font-bold">{t('app.title')}</h1><div className="flex items-center gap-2 text-xs text-slate-400 mt-1"><span className="w-2 h-2 rounded-full bg-green-500"></span>{fileName}</div></div>
                 <div className="flex gap-2">
-                    <button onClick={() => setActiveTab('settings')} className={`px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition ${activeTab === 'settings' ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-700'}`} title="Podešavanja Mapiranja"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg></button>
-                    <button onClick={handleDownloadDb} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition shadow-lg shadow-emerald-500/30"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Sačuvaj DB</button>
-                    <button onClick={resetDatabase} className="bg-slate-700 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition" title="Promeni bazu (Logout)"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg></button>
+                    <select
+                        value={i18n.language}
+                        onChange={(e) => i18n.changeLanguage(e.target.value)}
+                        className="px-3 py-2 rounded-lg text-sm font-medium bg-slate-700 text-white border border-slate-600 hover:bg-slate-600 transition"
+                    >
+                        <option value="sr">🇷🇸 SR</option>
+                        <option value="en">🇬🇧 EN</option>
+                    </select>
+                    <button onClick={() => setActiveTab('settings')} className={`px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition ${activeTab === 'settings' ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-700'}`} title={t('app.settings.mappingSettings')}><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg></button>
+                    <button onClick={handleDownloadDb} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition shadow-lg shadow-emerald-500/30"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> {t('app.saveDatabase')}</button>
+                    <button onClick={resetDatabase} className="bg-slate-700 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition" title={t('app.changeDatabase')}><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg></button>
                 </div>
             </header>
             <nav className="bg-slate-100 p-1 flex gap-1 border-b border-gray-200 overflow-x-auto">
                 {['dashboard', 'viewer', 'import', 'database', 'sql', 'settings'].map(tab => (
                     <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-3 rounded-lg text-sm font-medium transition capitalize whitespace-nowrap ${activeTab === tab ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'}`}>
-                        {tab === 'dashboard' ? 'Početna' : tab === 'viewer' ? 'Pregled' : tab === 'import' ? 'Uvoz' : tab === 'database' ? 'Baza' : tab === 'sql' ? 'SQL Konzola' : 'Podešavanja'}
+                        {t(`app.tabs.${tab}`)}
                     </button>
                 ))}
             </nav>
@@ -977,9 +997,9 @@ function App() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {Object.keys(mappings || {}).map(tbl => (
                             <div key={tbl} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:border-blue-300 transition group">
-                                <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-gray-800 capitalize group-hover:text-blue-600">{tbl}</h3><span className="bg-blue-50 text-blue-600 py-1 px-3 rounded-full text-xs font-bold">Tabela</span></div>
-                                <p className="text-gray-500 text-sm mb-4">Glavna tabela podataka.</p>
-                                <button onClick={() => { setViewerTable(tbl); setActiveTab('viewer'); }} className="w-full py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 text-sm font-medium">Otvori u Pregledaču</button>
+                                <div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-gray-800 capitalize group-hover:text-blue-600">{tbl}</h3><span className="bg-blue-50 text-blue-600 py-1 px-3 rounded-full text-xs font-bold">{t('common.table')}</span></div>
+                                <p className="text-gray-500 text-sm mb-4">{t('dashboard.mainDataTable')}</p>
+                                <button onClick={() => { setViewerTable(tbl); setActiveTab('viewer'); }} className="w-full py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 text-sm font-medium">{t('dashboard.openInViewer')}</button>
                             </div>
                         ))}
                     </div>
@@ -988,7 +1008,7 @@ function App() {
                 {activeTab === 'viewer' && (
                     <div className="flex flex-col h-[calc(100vh-12rem)]">
                         <div className="mb-4 flex items-center gap-3">
-                            <label className="text-sm font-medium text-gray-700">Izaberi Tabelu:</label>
+                            <label className="text-sm font-medium text-gray-700">{t('viewer.selectTable')}</label>
                             <select value={viewerTable} onChange={(e) => { setViewerTable(e.target.value); }} className="p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm">
                                 {Object.keys(mappings).map(t => <option key={t} value={t}>{t}</option>)}
                             </select>
@@ -996,7 +1016,7 @@ function App() {
                         <DataTable
                             data={viewerData}
                             columns={viewerColumns}
-                            title={`Pregled: ${viewerTable}`}
+                            title={t('viewer.viewTitle', { table: viewerTable })}
                             enableMapsExport={true}
                             className="flex-1 shadow-sm border border-gray-200 rounded-xl"
                             stickyHeader={true}
@@ -1005,7 +1025,7 @@ function App() {
                             onAlert={(message) => {
                                 setConfirmModal({
                                     isOpen: true,
-                                    title: "Obaveštenje",
+                                    title: t('modals.notification'),
                                     message: message,
                                     type: 'alert',
                                     onConfirm: null
@@ -1023,11 +1043,11 @@ function App() {
                                                 className="text-green-600 hover:text-green-800 text-xs font-bold border border-green-200 bg-green-50 hover:bg-green-100 px-3 py-1 rounded transition flex items-center gap-1"
                                             >
                                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                                                Mapa
+                                                {t('viewer.map')}
                                             </button>
                                         )}
-                                        <button onClick={() => handleEditRow(row)} className="text-blue-600 hover:text-blue-800 text-xs font-bold border border-blue-200 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded transition">Izmeni</button>
-                                        <button onClick={() => handleDeleteRow(row)} className="text-red-600 hover:text-red-800 text-xs font-bold border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition">Obriši</button>
+                                        <button onClick={() => handleEditRow(row)} className="text-blue-600 hover:text-blue-800 text-xs font-bold border border-blue-200 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded transition">{t('viewer.editRow')}</button>
+                                        <button onClick={() => handleDeleteRow(row)} className="text-red-600 hover:text-red-800 text-xs font-bold border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition">{t('viewer.deleteRow')}</button>
                                     </div>
                                 );
                             }}
@@ -1053,42 +1073,42 @@ function App() {
                         <div>
                             <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
                                 <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                                1. Uvoz novih podataka (CSV)
+                                {t('import.importNewData')}
                             </h2>
 
                             <div className="mb-6 p-6 bg-white rounded-xl border border-gray-200 shadow-sm">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     {/* Left Column: File Selection */}
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">Izaberi CSV Fajl</label>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">{t('import.selectCsvFile')}</label>
                                         <div className="flex items-center gap-3">
                                             <label className="cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold py-2 px-4 rounded-lg border border-blue-200 transition text-sm">
-                                                Choose File
+                                                {t('import.chooseFile')}
                                                 <input type="file" accept=".csv" onChange={handleCsvUpload} className="hidden" />
                                             </label>
-                                            <span className="text-sm text-gray-600 truncate max-w-[200px]">{csvFile ? csvFile.name : "Nije izabran fajl"}</span>
+                                            <span className="text-sm text-gray-600 truncate max-w-[200px]">{csvFile ? csvFile.name : t('import.noFileSelected')}</span>
                                         </div>
                                     </div>
 
                                     {/* Right Column: Table Selection & Action */}
                                     <div className="flex flex-col gap-4">
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-2">Ciljna Tabela</label>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">{t('import.targetTable')}</label>
                                             <select value={targetTable} onChange={(e) => setTargetTable(e.target.value)} className="w-full p-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm shadow-sm">
                                                 {Object.keys(mappings).map(t => <option key={t} value={t}>{t}</option>)}
-                                                <option value="__NEW_TABLE__" className="font-bold text-blue-600">+ Nova Tabela...</option>
+                                                <option value="__NEW_TABLE__" className="font-bold text-blue-600">{t('import.newTable')}</option>
                                             </select>
                                         </div>
 
                                         {targetTable === "__NEW_TABLE__" && (
                                             <div className="animate-fade-in">
-                                                <label className="block text-sm font-medium text-gray-700 mb-2">Naziv nove tabele (npr. leptiri)</label>
-                                                <input type="text" value={newTableName} onChange={(e) => setNewTableName(e.target.value)} placeholder="unesi naziv..." className="w-full p-2.5 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm bg-blue-50" />
+                                                <label className="block text-sm font-medium text-gray-700 mb-2">{t('import.newTableName')}</label>
+                                                <input type="text" value={newTableName} onChange={(e) => setNewTableName(e.target.value)} placeholder={t('import.enterTableName')} className="w-full p-2.5 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm bg-blue-50" />
                                             </div>
                                         )}
 
                                         <button onClick={handleImport} disabled={isProcessing} className={`mt-2 w-full py-3 px-4 rounded-lg font-bold text-white shadow-md transition transform active:scale-95 ${isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>
-                                            {isProcessing ? 'Procesiranje...' : 'Uvezi Podatke'}
+                                            {isProcessing ? t('import.processing') : t('import.importData')}
                                         </button>
                                     </div>
                                 </div>
@@ -1097,9 +1117,9 @@ function App() {
                         <div>
                             <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
                                 <svg className="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                2. Istorija Uvoza & Poništavanje
+                                {t('import.importHistory')}
                             </h2>
-                            <DataTable columns={["id", "filename", "target_table", "import_date", "row_count", "backup_table_name"]} data={importLog} title="Zapisi o uvozu" enableMapsExport={false} rowAction={(row) => (<button onClick={() => handleUndoImport(row)} className="text-red-600 hover:text-red-800 text-xs font-bold border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg> Poništi</button>)} />
+                            <DataTable columns={["id", "filename", "target_table", "import_date", "row_count", "backup_table_name"]} data={importLog} title={t('import.importRecords')} enableMapsExport={false} rowAction={(row) => (<button onClick={() => handleUndoImport(row)} className="text-red-600 hover:text-red-800 text-xs font-bold border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg> {t('import.undo')}</button>)} />
                         </div>
                     </div>
                 )}
@@ -1107,11 +1127,11 @@ function App() {
                 {activeTab === 'database' && (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         <div>
-                            <h3 className="text-lg font-bold text-orange-800 mb-3 flex items-center gap-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> Backup Tabele</h3>
+                            <h3 className="text-lg font-bold text-orange-800 mb-3 flex items-center gap-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> {t('database.backupTables')}</h3>
                             <DataTable
-                                columns={["Naziv Tabele"]}
+                                columns={[t('database.tableName')]}
                                 data={dbTables.filter(t => t.startsWith('import_')).map(t => [t])}
-                                title="Backup Tabele"
+                                title={t('database.backupTables')}
                                 enableMapsExport={false}
                                 rowAction={(row) => (
                                     <div className="flex gap-2 justify-end">
@@ -1121,8 +1141,8 @@ function App() {
                                                 if (mainTables.includes(tableName)) {
                                                     setConfirmModal({
                                                         isOpen: true,
-                                                        title: "Ukloni iz Glavnih Tabela",
-                                                        message: `Da li sigurno želite da uklonite tabelu "${tableName}" iz Glavnih tabela? Mapiranje će biti obrisano.`,
+                                                        title: t('database.removeFromMainTables'),
+                                                        message: t('database.removeFromMainTablesConfirm', { name: tableName }),
                                                         onConfirm: () => {
                                                             const newMainTables = mainTables.filter(t => t !== tableName);
                                                             setMainTables(newMainTables);
@@ -1131,7 +1151,7 @@ function App() {
                                                             setMappings(newMappings);
                                                             const config = { mappings: newMappings, column_roles: columnRoles, main_tables: newMainTables };
                                                             db.exec(`UPDATE app_config SET value = '${JSON.stringify(config)}' WHERE key = 'mappings'`);
-                                                            setSuccessMsg(`Tabela "${tableName}" uklonjena iz Glavnih tabela.`);
+                                                            setSuccessMsg(t('database.removedFromMainTables', { name: tableName }));
                                                             setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null });
                                                         }
                                                     });
@@ -1160,7 +1180,7 @@ function App() {
                                                     setMappings(newMappings);
                                                     const config = { mappings: newMappings, column_roles: columnRoles, main_tables: newMainTables };
                                                     db.exec(`UPDATE app_config SET value = '${JSON.stringify(config)}' WHERE key = 'mappings'`);
-                                                    setSuccessMsg(`Tabela "${tableName}" postavljena kao Glavna sa automatskim mapiranjem varijanti naziva kolona.`);
+                                                    setSuccessMsg(t('database.promotedToMain', { name: tableName }));
                                                 }
                                             }}
                                             className="text-blue-600 hover:text-blue-800 text-xs font-bold"
@@ -1168,37 +1188,37 @@ function App() {
                                             {mainTables.includes(row[0]) ? '★' : '☆'}
                                         </button>
                                         <button onClick={() => openInSql(row[0])} className="text-blue-600 hover:text-blue-800 text-xs font-bold border border-blue-200 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded transition">SQL</button>
-                                        <button onClick={() => handleDropTable(row[0])} className="text-red-600 hover:text-red-800 text-xs font-bold border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition">Obriši</button>
+                                        <button onClick={() => handleDropTable(row[0])} className="text-red-600 hover:text-red-800 text-xs font-bold border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition">{t('common.delete')}</button>
                                     </div>
                                 )}
                             />
                         </div>
 
                         <div>
-                            <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg> Tabele</h3>
+                            <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg> {t('database.tables')}</h3>
                             <DataTable
-                                columns={["Naziv Tabele", "Tip"]}
+                                columns={[t('database.tableName'), t('database.type')]}
                                 data={dbTables.filter(tbl => !tbl.startsWith('import_')).map(tbl => {
-                                    let type = "Ostalo";
-                                    if (mainTables.includes(tbl)) type = "Glavna";
-                                    else if (tbl.startsWith('import_')) type = "Backup";
-                                    else if (tbl === 'app_import_history' || tbl === 'app_config' || tbl === 'sqlite_sequence') type = "Sistemska";
+                                    let type = t('database.other');
+                                    if (mainTables.includes(tbl)) type = t('database.main');
+                                    else if (tbl.startsWith('import_')) type = t('database.backup');
+                                    else if (tbl === 'app_import_history' || tbl === 'app_config' || tbl === 'sqlite_sequence') type = t('database.system');
                                     return [tbl, type];
                                 })}
-                                title="Tabele u Bazi"
+                                title={t('database.tablesInDatabase')}
                                 enableMapsExport={false}
                                 rowAction={(row) => (
                                     <div className="flex gap-2 justify-end">
                                         <button onClick={() => openInSql(row[0])} className="text-blue-600 hover:text-blue-800 text-xs font-bold border border-blue-200 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded transition">SQL</button>
-                                        {row[1] !== 'Sistemska' && (
+                                        {row[1] !== t('database.system') && (
                                             <button
                                                 onClick={() => {
                                                     const tableName = row[0];
                                                     if (mainTables.includes(tableName)) {
                                                         setConfirmModal({
                                                             isOpen: true,
-                                                            title: "Ukloni iz Glavnih Tabela",
-                                                            message: `Da li sigurno želite da uklonite tabelu "${tableName}" iz Glavnih tabela? Mapiranje će biti obrisano.`,
+                                                            title: t('database.removeFromMainTables'),
+                                                            message: t('database.removeFromMainTablesConfirm', { name: tableName }),
                                                             onConfirm: () => {
                                                                 const newMainTables = mainTables.filter(t => t !== tableName);
                                                                 setMainTables(newMainTables);
@@ -1207,7 +1227,7 @@ function App() {
                                                                 setMappings(newMappings);
                                                                 const config = { mappings: newMappings, column_roles: columnRoles, main_tables: newMainTables };
                                                                 db.exec(`UPDATE app_config SET value = '${JSON.stringify(config)}' WHERE key = 'mappings'`);
-                                                                setSuccessMsg(`Tabela "${tableName}" uklonjena iz Glavnih tabela.`);
+                                                                setSuccessMsg(t('database.removedFromMainTables', { name: tableName }));
                                                                 setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null });
                                                             }
                                                         });
@@ -1263,7 +1283,7 @@ function App() {
                                                         setMappings(newMappings);
                                                         const config = { mappings: newMappings, column_roles: columnRoles, main_tables: newMainTables };
                                                         db.exec(`UPDATE app_config SET value = '${JSON.stringify(config)}' WHERE key = 'mappings'`);
-                                                        setSuccessMsg(`Tabela "${tableName}" postavljena kao Glavna sa automatskim mapiranjem varijanti naziva kolona.`);
+                                                        setSuccessMsg(t('database.promotedToMain', { name: tableName }));
                                                     }
                                                 }}
                                                 className="text-blue-600 hover:text-blue-800 text-xs font-bold ml-2"
@@ -1271,8 +1291,8 @@ function App() {
                                                 {mainTables.includes(row[0]) ? '★' : '☆'}
                                             </button>
                                         )}
-                                        {(row[1] === 'Backup' || row[1] === 'Ostalo') && (
-                                            <button onClick={() => handleDropTable(row[0])} className="text-red-600 hover:text-red-800 text-xs font-bold border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition">Obriši</button>
+                                        {(row[1] === t('database.backup') || row[1] === t('database.other')) && (
+                                            <button onClick={() => handleDropTable(row[0])} className="text-red-600 hover:text-red-800 text-xs font-bold border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition">{t('common.delete')}</button>
                                         )}
                                     </div>
                                 )}
@@ -1283,13 +1303,13 @@ function App() {
 
                 {activeTab === 'settings' && tempMappings && (
                     <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                        <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center"><h2 className="text-lg font-bold text-gray-800">Podešavanje Mapiranja Kolona</h2><button onClick={handleSaveSettings} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg> Sačuvaj Podešavanja</button></div>
+                        <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center"><h2 className="text-lg font-bold text-gray-800">{t('app.settings.mappingSettings')}</h2><button onClick={handleSaveSettings} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg> {t('app.settings.saveSettings')}</button></div>
                         <div className="p-6">
-                            <div className="mb-6"><label className="block text-sm font-medium text-gray-700 mb-2">Izaberi Tabelu za Mapiranje:</label><select value={settingsTable} onChange={(e) => setSettingsTable(e.target.value)} className="w-full md:w-1/3 p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm">
+                            <div className="mb-6"><label className="block text-sm font-medium text-gray-700 mb-2">{t('app.settings.selectTableForMapping')}</label><select value={settingsTable} onChange={(e) => setSettingsTable(e.target.value)} className="w-full md:w-1/3 p-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm">
                                 {Object.keys(mappings).map(t => <option key={t} value={t}>{t}</option>)}
-                            </select><p className="text-xs text-gray-500 mt-2">Ovde definišeš koji se nazivi kolona iz CSV fajla mapiraju u koju kolonu baze. Odvoji nazive zarezom.</p></div>
+                            </select><p className="text-xs text-gray-500 mt-2">{t('app.settings.mappingDescription')}</p></div>
                             <div className="overflow-hidden border border-gray-200 rounded-lg">
-                                <table className="min-w-full divide-y divide-gray-200 text-sm"><thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider w-1/4">Kolona u Bazi</th><th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">CSV Alias-i (odvojeni zarezom)</th></tr></thead>
+                                <table className="min-w-full divide-y divide-gray-200 text-sm"><thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider w-1/4">{t('app.settings.databaseColumn')}</th><th className="px-6 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">{t('app.settings.csvAliases')}</th></tr></thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
                                         {Object.keys(tempMappings).map((col) => (
                                             <tr key={col} className="hover:bg-gray-50"><td className="px-6 py-4 font-mono text-blue-700 font-medium">{col}</td><td className="px-6 py-2"><input type="text" className="w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none" value={tempMappings[col] || ""} onChange={(e) => handleMappingChange(col, e.target.value)} /></td></tr>
@@ -1299,11 +1319,11 @@ function App() {
                             </div>
 
                             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mt-4">
-                                <h3 className="font-bold text-gray-700 mb-2">Konfiguracija Mape</h3>
-                                <p className="text-xs text-gray-500 mb-4">Ručno odaberite kolone za Latitudu i Longitudu.</p>
+                                <h3 className="font-bold text-gray-700 mb-2">{t('app.settings.mapConfiguration')}</h3>
+                                <p className="text-xs text-gray-500 mb-4">{t('app.settings.mapConfigurationDescription')}</p>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-600 mb-1">Latituda Kolona</label>
+                                        <label className="block text-sm font-medium text-gray-600 mb-1">{t('app.settings.latitudeColumn')}</label>
                                         <select
                                             value={columnRoles[settingsTable]?.lat || ""}
                                             onChange={(e) => {
@@ -1314,14 +1334,14 @@ function App() {
                                             }}
                                             className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                                         >
-                                            <option value="">Automatska detekcija</option>
+                                            <option value="">{t('app.settings.autoDetection')}</option>
                                             {Object.keys(tempMappings).map(col => (
                                                 <option key={col} value={col}>{col}</option>
                                             ))}
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-600 mb-1">Longituda Kolona</label>
+                                        <label className="block text-sm font-medium text-gray-600 mb-1">{t('app.settings.longitudeColumn')}</label>
                                         <select
                                             value={columnRoles[settingsTable]?.lon || ""}
                                             onChange={(e) => {
@@ -1332,7 +1352,7 @@ function App() {
                                             }}
                                             className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                                         >
-                                            <option value="">Automatska detekcija</option>
+                                            <option value="">{t('app.settings.autoDetection')}</option>
                                             {Object.keys(tempMappings).map(col => (
                                                 <option key={col} value={col}>{col}</option>
                                             ))}
@@ -1350,7 +1370,7 @@ function App() {
                             {/* SQL Console Section */}
                             <div className={`bg-white p-4 rounded-xl shadow-sm border border-gray-200 ${savedQueries.length > 0 ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
                                 <div className="flex justify-between items-center mb-4">
-                                    <label className="block text-sm font-bold text-gray-700">SQL Konzola</label>
+                                    <label className="block text-sm font-bold text-gray-700">{t('sql.console')}</label>
                                     <button
                                         onClick={() => setIsQueryBuilderOpen(true)}
                                         className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition"
@@ -1358,7 +1378,7 @@ function App() {
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
                                         </svg>
-                                        Query Builder
+                                        {t('sql.queryBuilder')}
                                     </button>
                                 </div>
                                 <div>
@@ -1373,7 +1393,7 @@ function App() {
                                             onClick={() => execQuery()}
                                             className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-6 rounded-lg font-medium"
                                         >
-                                            Izvrši
+                                            {t('sql.execute')}
                                         </button>
                                     </div>
                                 </div>
@@ -1382,7 +1402,7 @@ function App() {
                             {/* Saved Queries Section */}
                             {savedQueries.length > 0 && (
                                 <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-                                    <h3 className="text-sm font-bold text-gray-700 mb-3">Sačuvani Upiti</h3>
+                                    <h3 className="text-sm font-bold text-gray-700 mb-3">{t('sql.savedQueries')}</h3>
                                     <div className="space-y-2 max-h-[500px] overflow-y-auto">
                                         {savedQueries.map(savedQuery => (
                                             <div
@@ -1408,14 +1428,14 @@ function App() {
                                                         <button
                                                             onClick={() => saveEditedQuery(savedQuery.id)}
                                                             className="text-green-600 hover:text-green-800 text-xs font-bold"
-                                                            title="Sačuvaj"
+                                                            title={t('common.save')}
                                                         >
                                                             ✓
                                                         </button>
                                                         <button
                                                             onClick={cancelEditingQuery}
                                                             className="text-gray-600 hover:text-gray-800 text-xs font-bold"
-                                                            title="Otkaži"
+                                                            title={t('common.cancel')}
                                                         >
                                                             ✕
                                                         </button>
@@ -1435,7 +1455,7 @@ function App() {
                                                                     startEditingQuery(savedQuery);
                                                                 }}
                                                                 className="text-blue-600 hover:text-blue-800 text-xs font-bold"
-                                                                title="Izmeni naziv"
+                                                                title={t('sql.editQueryName')}
                                                             >
                                                                 ✎
                                                             </button>
@@ -1445,7 +1465,7 @@ function App() {
                                                                     deleteQuery(savedQuery.id);
                                                                 }}
                                                                 className="text-red-600 hover:text-red-800 text-xs font-bold"
-                                                                title="Obriši"
+                                                                title={t('common.delete')}
                                                             >
                                                                 ✕
                                                             </button>
@@ -1465,7 +1485,7 @@ function App() {
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                     </svg>
                                     <div className="flex-1">
-                                        <p className="text-red-700 font-medium text-sm">SQL Greška:</p>
+                                        <p className="text-red-700 font-medium text-sm">{t('sql.sqlError')}</p>
                                         <p className="text-red-600 text-sm mt-1 font-mono">{error}</p>
                                     </div>
                                     <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 ml-2">
@@ -1479,7 +1499,7 @@ function App() {
                         {queryResults && (
                             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                                 <div className="flex justify-between items-center mb-4">
-                                    <h3 className="text-sm font-bold text-gray-700">Rezultati Upita</h3>
+                                    <h3 className="text-sm font-bold text-gray-700">{t('sql.queryResults')}</h3>
                                     <button
                                         onClick={() => setShowSaveQueryDialog(true)}
                                         className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium flex items-center gap-2 transition"
@@ -1487,7 +1507,7 @@ function App() {
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"></path>
                                         </svg>
-                                        Sačuvaj Upit
+                                        {t('sql.saveQuery')}
                                     </button>
                                 </div>
                                 {showSaveQueryDialog && (
@@ -1498,7 +1518,7 @@ function App() {
                                                     type="text"
                                                     value={queryName}
                                                     onChange={(e) => setQueryName(e.target.value)}
-                                                    placeholder="Naziv upita..."
+                                                    placeholder={t('sql.queryName')}
                                                     className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                                                     onKeyPress={(e) => {
                                                         if (e.key === 'Enter') {
@@ -1512,7 +1532,7 @@ function App() {
                                                 disabled={!queryName.trim() || !query.trim()}
                                                 className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium"
                                             >
-                                                Sačuvaj
+                                                {t('common.save')}
                                             </button>
                                             <button
                                                 onClick={() => {
@@ -1521,7 +1541,7 @@ function App() {
                                                 }}
                                                 className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-sm font-medium"
                                             >
-                                                Otkaži
+                                                {t('common.cancel')}
                                             </button>
                                         </div>
                                     </div>
@@ -1531,8 +1551,8 @@ function App() {
                                         <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                                         </svg>
-                                        <p className="text-gray-600 font-medium">Upit je uspešno izvršen, ali nije vratio rezultate.</p>
-                                        <p className="text-gray-500 text-sm mt-2">Nema podataka koji odgovaraju uslovima upita.</p>
+                                        <p className="text-gray-600 font-medium">{t('sql.queryExecutedNoResults')}</p>
+                                        <p className="text-gray-500 text-sm mt-2">{t('sql.noDataMatchingQuery')}</p>
                                     </div>
                                 ) : (
                                     queryResults.map((res, i) => {
@@ -1540,13 +1560,13 @@ function App() {
                                         if (!res.values || res.values.length === 0) {
                                             return (
                                                 <div key={i} className="mb-4">
-                                                    <h3 className="text-sm font-bold text-gray-700 mb-2">Rezultat {i + 1}</h3>
+                                                    <h3 className="text-sm font-bold text-gray-700 mb-2">{t('sql.result', { number: i + 1 })}</h3>
                                                     <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
                                                         <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                                                         </svg>
-                                                        <p className="text-gray-600 font-medium">Nema podataka</p>
-                                                        <p className="text-gray-500 text-sm mt-2">Upit je uspešno izvršen, ali nije vratio rezultate.</p>
+                                                        <p className="text-gray-600 font-medium">{t('sql.noData')}</p>
+                                                        <p className="text-gray-500 text-sm mt-2">{t('sql.queryExecutedNoResults')}</p>
                                                     </div>
                                                 </div>
                                             );
@@ -1556,12 +1576,12 @@ function App() {
                                                 key={i}
                                                 columns={res.columns}
                                                 data={res.values}
-                                                title={`Rezultat ${i + 1}`}
+                                                title={t('sql.result', { number: i + 1 })}
                                                 enableMapsExport={true}
                                                 onAlert={(message) => {
                                                     setConfirmModal({
                                                         isOpen: true,
-                                                        title: "Obaveštenje",
+                                                        title: t('modals.notification'),
                                                         message: message,
                                                         type: 'alert',
                                                         onConfirm: null

@@ -130,9 +130,12 @@ const DataTable = ({ columns, data, title, enableMapsExport = true, className = 
 
     // Determine if we need scroll container with fixed height
     const needsScrollContainer = viewMode === 'infinite' || stickyHeader;
+    // If className contains flex-1, we're in a flex container, otherwise use fixed height
+    const isInFlexContainer = className && className.includes('flex-1');
+    const containerStyle = needsScrollContainer && !isInFlexContainer ? { maxHeight: '600px' } : {};
 
     return (
-        <div className={`bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col ${needsScrollContainer ? 'overflow-hidden' : ''} ${className || 'mb-8'}`} style={needsScrollContainer ? { maxHeight: '600px' } : {}}>
+        <div className={`bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col ${needsScrollContainer ? 'overflow-hidden min-h-0' : ''} ${className || 'mb-8'}`} style={containerStyle}>
             <div className="p-4 border-b border-gray-200 flex flex-col md:flex-row gap-4 items-center justify-between bg-gray-50 flex-shrink-0">
                 <div className="flex flex-col md:flex-row md:items-center gap-4 w-full">
                     <div className="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center gap-2 whitespace-nowrap">

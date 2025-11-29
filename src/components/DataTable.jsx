@@ -4,7 +4,7 @@ import Pagination from './Pagination';
 import { PAGE_SIZE } from '../constants';
 import { getLatLonIndices } from '../utils/helpers';
 
-const DataTable = ({ columns, data, title, enableMapsExport = true, className = "", stickyHeader = false, rowAction = null, columnRoles = {}, stickyColumns = 0 }) => {
+const DataTable = ({ columns, data, title, enableMapsExport = true, className = "", stickyHeader = false, rowAction = null, columnRoles = {}, stickyColumns = 0, onAlert = null }) => {
     const [page, setPage] = useState(1);
     const [search, setSearch] = useState("");
     const [sortCol, setSortCol] = useState(null);
@@ -77,7 +77,14 @@ const DataTable = ({ columns, data, title, enableMapsExport = true, className = 
     };
 
     const exportCSV = (mode) => {
-        if (!filteredData || filteredData.length === 0) return alert("Nema podataka za izvoz.");
+        if (!filteredData || filteredData.length === 0) {
+            if (onAlert) {
+                onAlert("Nema podataka za izvoz.");
+            } else {
+                alert("Nema podataka za izvoz.");
+            }
+            return;
+        }
         let exportData = [];
         if (mode === 'standard') {
             exportData = filteredData.map(row => {
@@ -89,7 +96,14 @@ const DataTable = ({ columns, data, title, enableMapsExport = true, className = 
             });
         } else if (mode === 'google') {
             const { latIdx, lonIdx } = getLatLonIndices(columns, columnRoles);
-            if (latIdx === -1 || lonIdx === -1) return alert("Greška: Nisu pronađene kolone za Latitudu i Longitudu.");
+            if (latIdx === -1 || lonIdx === -1) {
+                if (onAlert) {
+                    onAlert("Greška: Nisu pronađene kolone za Latitudu i Longitudu.");
+                } else {
+                    alert("Greška: Nisu pronađene kolone za Latitudu i Longitudu.");
+                }
+                return;
+            }
             exportData = filteredData.map(row => {
                 let obj = {};
                 obj["WKT"] = `POINT(${row[lonIdx] || 0} ${row[latIdx] || 0})`;

@@ -811,10 +811,16 @@ const QueryBuilder = ({ db, dbTables, onGenerateQuery }) => {
                         <div className="flex justify-between items-center mb-2">
                             <label className="block text-sm font-bold text-gray-300">Generisani SQL Upit</label>
                             <button
-                                onClick={() => {
-                                    navigator.clipboard.writeText(generatedSQL);
-                                    alert('SQL upit kopiran u clipboard!');
-                                }}
+                            onClick={() => {
+                                navigator.clipboard.writeText(generatedSQL);
+                                // Success feedback - could use a toast notification instead
+                                const button = document.activeElement;
+                                const originalText = button.textContent;
+                                button.textContent = 'Kopirano!';
+                                setTimeout(() => {
+                                    button.textContent = originalText;
+                                }, 2000);
+                            }}
                                 className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded"
                             >
                                 Kopiraj

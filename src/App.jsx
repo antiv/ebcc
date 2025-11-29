@@ -39,7 +39,8 @@ function App() {
     const [newTableName, setNewTableName] = useState("");
     const [editingRow, setEditingRow] = useState(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: "", message: "", onConfirm: null });
+    const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: "", message: "", onConfirm: null, type: 'confirm' });
+    const [pendingImportAction, setPendingImportAction] = useState(null);
     const [mapModal, setMapModal] = useState({ isOpen: false, lat: 0, lon: 0 });
     const [columnRoles, setColumnRoles] = useState({}); // { tableName: { lat: "col1", lon: "col2" } }
     const [mainTables, setMainTables] = useState([]); // List of tables marked as main
@@ -284,9 +285,19 @@ function App() {
     };
 
     const resetDatabase = () => {
-        if (confirm("Da li ste sigurni da želite da zatvorite bazu? Nesačuvane izmene će biti izgubljene.")) {
-            setDb(null); setFileName(""); setViewerData([]); setQueryResults(null); setActiveTab("dashboard");
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: "Zatvaranje Baze",
+            message: "Da li ste sigurni da želite da zatvorite bazu? Nesačuvane izmene će biti izgubljene.",
+            onConfirm: () => {
+                setDb(null);
+                setFileName("");
+                setViewerData([]);
+                setQueryResults(null);
+                setActiveTab("dashboard");
+                setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null });
+            }
+        });
     };
 
     const refreshImportLog = (database) => {
@@ -311,16 +322,22 @@ function App() {
     };
 
     const handleDropTable = (tableName) => {
-        if (confirm(`Da li ste sigurni da želite trajno da obrišete tabelu '${tableName}'?
-Ova akcija je nepovratna!`)) {
-            try {
-                db.exec(`DROP TABLE "${tableName}"`);
-                setSuccessMsg(`Tabela '${tableName}' je uspešno obrisana.`);
-                fetchDbTables(); // Refresh list
-            } catch (e) {
-                setError("Greška pri brisanju tabele: " + e.message);
+        setConfirmModal({
+            isOpen: true,
+            title: "Brisanje Tabele",
+            message: `Da li ste sigurni da želite trajno da obrišete tabelu '${tableName}'?\nOva akcija je nepovratna!`,
+            onConfirm: () => {
+                try {
+                    db.exec(`DROP TABLE "${tableName}"`);
+                    setSuccessMsg(`Tabela '${tableName}' je uspešno obrisana.`);
+                    fetchDbTables(); // Refresh list
+                    setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null, type: 'confirm' });
+                } catch (e) {
+                    setError("Greška pri brisanju tabele: " + e.message);
+                    setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null, type: 'confirm' });
+                }
             }
-        }
+        });
     };
 
     const openInSql = (tableName) => {
@@ -382,20 +399,27 @@ Ova akcija je nepovratna!`)) {
             setError('Baza nije učitana.');
             return;
         }
-        if (confirm('Da li ste sigurni da želite da obrišete ovaj upit?')) {
-            try {
-                const stmt = db.prepare("DELETE FROM app_saved_queries WHERE id = ?");
-                stmt.run([id]);
-                stmt.free();
+        setConfirmModal({
+            isOpen: true,
+            title: "Brisanje Upita",
+            message: 'Da li ste sigurni da želite da obrišete ovaj upit?',
+            onConfirm: () => {
+                try {
+                    const stmt = db.prepare("DELETE FROM app_saved_queries WHERE id = ?");
+                    stmt.run([id]);
+                    stmt.free();
 
-                const updated = savedQueries.filter(q => q.id !== id);
-                setSavedQueries(updated);
-                setSuccessMsg('Upit uspešno obrisan.');
-            } catch (e) {
-                console.error('Error deleting query:', e);
-                setError('Greška pri brisanju upita: ' + e.message);
+                    const updated = savedQueries.filter(q => q.id !== id);
+                    setSavedQueries(updated);
+                    setSuccessMsg('Upit uspešno obrisan.');
+                    setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null });
+                } catch (e) {
+                    console.error('Error deleting query:', e);
+                    setError('Greška pri brisanju upita: ' + e.message);
+                    setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null });
+                }
             }
-        }
+        });
     };
 
     const startEditingQuery = (query) => {
@@ -445,43 +469,57 @@ Ova akcija je nepovratna!`)) {
 
     const handleUndoImport = (row) => {
         const [id, filename, target_table, import_date, row_count, backup_table_name] = row;
-        if (!backup_table_name) return alert("Nije moguće poništiti ovaj uvoz jer naziv backup tabele nije sačuvan.");
-        if (!confirm(`PAŽNJA: Ovo će obrisati ${row_count} redova iz tabele '${target_table}' koji su uvezeni iz fajla '${filename}'.
-
-Da li ste sigurni da želite da nastavite?`)) return;
-
-        try {
-            const checkTable = db.exec(`SELECT name FROM sqlite_master WHERE type='table' AND name='${backup_table_name}'`);
-            if (checkTable.length === 0) throw new Error(`Backup tabela '${backup_table_name}' više ne postoji u bazi. Nemoguće izvršiti automatsko brisanje.`);
-
-            const mapping = mappings[target_table];
-            if (!mapping) throw new Error("Nema mapiranja za ovu tabelu.");
-
-            const backupColsRes = db.exec(`PRAGMA table_info("${backup_table_name}")`);
-            const backupCols = backupColsRes[0].values.map(r => r[1]);
-
-            let joinConditions = [];
-            for (const [dbCol, csvOptions] of Object.entries(mapping)) {
-                const match = backupCols.find(c => csvOptions.includes(c));
-                if (match) joinConditions.push(`main_tbl."${dbCol}" = backup_tbl."${match}"`);
-            }
-
-            if (joinConditions.length === 0) throw new Error("Nije moguće utvrditi parove kolona za brisanje.");
-
-            const deleteQuery = `DELETE FROM ${target_table} WHERE rowid IN (SELECT main_tbl.rowid FROM ${target_table} AS main_tbl INNER JOIN "${backup_table_name}" AS backup_tbl ON ${joinConditions.join(" AND ")})`;
-
-            db.exec("BEGIN TRANSACTION");
-            db.exec(deleteQuery);
-            db.run("DELETE FROM app_import_history WHERE id = ?", [id]);
-            db.exec(`DROP TABLE IF EXISTS "${backup_table_name}"`);
-            db.exec("COMMIT");
-
-            setSuccessMsg("Uvoz uspešno poništen. Podaci su obrisani iz glavne tabele i zapis je uklonjen iz istorije.");
-            refreshImportLog(db);
-        } catch (err) {
-            db.exec("ROLLBACK");
-            setError("Greška pri poništavanju uvoza: " + err.message);
+        if (!backup_table_name) {
+            setConfirmModal({
+                isOpen: true,
+                title: "Greška",
+                message: "Nije moguće poništiti ovaj uvoz jer naziv backup tabele nije sačuvan.",
+                type: 'alert',
+                onConfirm: null
+            });
+            return;
         }
+        setConfirmModal({
+            isOpen: true,
+            title: "Poništavanje Uvoza",
+            message: `PAŽNJA: Ovo će obrisati ${row_count} redova iz tabele '${target_table}' koji su uvezeni iz fajla '${filename}'.\n\nDa li ste sigurni da želite da nastavite?`,
+            onConfirm: () => {
+                try {
+                    const checkTable = db.exec(`SELECT name FROM sqlite_master WHERE type='table' AND name='${backup_table_name}'`);
+                    if (checkTable.length === 0) throw new Error(`Backup tabela '${backup_table_name}' više ne postoji u bazi. Nemoguće izvršiti automatsko brisanje.`);
+
+                    const mapping = mappings[target_table];
+                    if (!mapping) throw new Error("Nema mapiranja za ovu tabelu.");
+
+                    const backupColsRes = db.exec(`PRAGMA table_info("${backup_table_name}")`);
+                    const backupCols = backupColsRes[0].values.map(r => r[1]);
+
+                    let joinConditions = [];
+                    for (const [dbCol, csvOptions] of Object.entries(mapping)) {
+                        const match = backupCols.find(c => csvOptions.includes(c));
+                        if (match) joinConditions.push(`main_tbl."${dbCol}" = backup_tbl."${match}"`);
+                    }
+
+                    if (joinConditions.length === 0) throw new Error("Nije moguće utvrditi parove kolona za brisanje.");
+
+                    const deleteQuery = `DELETE FROM ${target_table} WHERE rowid IN (SELECT main_tbl.rowid FROM ${target_table} AS main_tbl INNER JOIN "${backup_table_name}" AS backup_tbl ON ${joinConditions.join(" AND ")})`;
+
+                    db.exec("BEGIN TRANSACTION");
+                    db.exec(deleteQuery);
+                    db.run("DELETE FROM app_import_history WHERE id = ?", [id]);
+                    db.exec(`DROP TABLE IF EXISTS "${backup_table_name}"`);
+                    db.exec("COMMIT");
+
+                    setSuccessMsg("Uvoz uspešno poništen. Podaci su obrisani iz glavne tabele i zapis je uklonjen iz istorije.");
+                    refreshImportLog(db);
+                    setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null, type: 'confirm' });
+                } catch (err) {
+                    db.exec("ROLLBACK");
+                    setError("Greška pri poništavanju uvoza: " + err.message);
+                    setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null, type: 'confirm' });
+                }
+            }
+        });
     };
 
     useEffect(() => {
@@ -629,13 +667,49 @@ Da li ste sigurni da želite da nastavite?`)) return;
                         const matchedCols = targetCols.length;
                         const matchPercent = Math.round((matchedCols / totalTargetCols) * 100);
                         if (matchPercent < 75) {
-                            if (!confirm(`UPOZORENJE: Detektovano je poklapanje samo ${matchedCols} od ${totalTargetCols} kolona (${matchPercent}%) za tabelu '${tableToUse}'.
+                            // Store the continuation logic
+                            const continueImport = () => {
+                                try {
+                                    const finalSql = `INSERT INTO ${tableToUse} (${targetCols.join(", ")}) SELECT ${selectCols.join(", ")} FROM "${tempTableName}"`;
+                                    db.exec(finalSql);
+                                    db.run(`INSERT INTO app_import_history (filename, target_table, row_count, backup_table_name) VALUES (?, ?, ?, ?)`, [csvFile.name, tableToUse, data.length, tempTableName]);
 
-Velika je verovatnoća da pokušavate uvoz pogrešnog fajla ili da mapiranja nisu ispravna.
+                                    db.exec("COMMIT");
 
-Da li sigurno želite da nastavite uvoz?`)) {
-                                throw new Error("Uvoz otkazan od strane korisnika (loše poklapanje kolona).");
-                            }
+                                    setSuccessMsg(`Uspešno uvezeno ${data.length} redova iz '${csvFile.name}' u tabelu '${tableToUse}'.`);
+                                    refreshImportLog(db);
+                                    setCsvFile(null);
+                                    setNewTableName("");
+                                } catch (err) {
+                                    db.exec("ROLLBACK");
+                                    setError("Greška pri importu: " + err.message);
+                                } finally {
+                                    setIsProcessing(false);
+                                }
+                            };
+
+                            setPendingImportAction({ continueImport, tempTableName, targetCols, selectCols, tableToUse, data, csvFile });
+                            setConfirmModal({
+                                isOpen: true,
+                                title: "Upozorenje",
+                                message: `UPOZORENJE: Detektovano je poklapanje samo ${matchedCols} od ${totalTargetCols} kolona (${matchPercent}%) za tabelu '${tableToUse}'.\n\nVelika je verovatnoća da pokušavate uvoz pogrešnog fajla ili da mapiranja nisu ispravna.\n\nDa li sigurno želite da nastavite uvoz?`,
+                                onConfirm: () => {
+                                    if (pendingImportAction) {
+                                        pendingImportAction.continueImport();
+                                    }
+                                    setPendingImportAction(null);
+                                    setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null, type: 'confirm' });
+                                },
+                                onCancel: () => {
+                                    db.exec("ROLLBACK");
+                                    setIsProcessing(false);
+                                    setPendingImportAction(null);
+                                    setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null, type: 'confirm' });
+                                    throw new Error("Uvoz otkazan od strane korisnika (loše poklapanje kolona).");
+                                },
+                                type: 'confirm'
+                            });
+                            return; // Exit and wait for user confirmation
                         }
 
                         const finalSql = `INSERT INTO ${tableToUse} (${targetCols.join(", ")}) SELECT ${selectCols.join(", ")} FROM "${tempTableName}"`;
@@ -928,6 +1002,15 @@ Da li sigurno želite da nastavite uvoz?`)) {
                             stickyHeader={true}
                             stickyColumns={1}
                             columnRoles={columnRoles[viewerTable]}
+                            onAlert={(message) => {
+                                setConfirmModal({
+                                    isOpen: true,
+                                    title: "Obaveštenje",
+                                    message: message,
+                                    type: 'alert',
+                                    onConfirm: null
+                                });
+                            }}
                             rowAction={(row) => {
                                 const { latIdx, lonIdx } = getLatLonIndices(viewerColumns, columnRoles[viewerTable]);
                                 const hasCoords = latIdx !== -1 && lonIdx !== -1 && row[latIdx] && row[lonIdx];
@@ -1475,6 +1558,15 @@ Da li sigurno želite da nastavite uvoz?`)) {
                                                 data={res.values}
                                                 title={`Rezultat ${i + 1}`}
                                                 enableMapsExport={true}
+                                                onAlert={(message) => {
+                                                    setConfirmModal({
+                                                        isOpen: true,
+                                                        title: "Obaveštenje",
+                                                        message: message,
+                                                        type: 'alert',
+                                                        onConfirm: null
+                                                    });
+                                                }}
                                             />
                                         );
                                     })
@@ -1486,10 +1578,12 @@ Da li sigurno želite da nastavite uvoz?`)) {
             </main>
             <ConfirmModal
                 isOpen={confirmModal.isOpen}
-                onClose={() => setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null })}
+                onClose={() => setConfirmModal({ isOpen: false, title: "", message: "", onConfirm: null, type: 'confirm' })}
                 onConfirm={confirmModal.onConfirm}
+                onCancel={confirmModal.onCancel}
                 title={confirmModal.title}
                 message={confirmModal.message}
+                type={confirmModal.type || 'confirm'}
             />
             <QueryBuilderModal
                 isOpen={isQueryBuilderOpen}

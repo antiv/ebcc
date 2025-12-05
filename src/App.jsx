@@ -143,7 +143,7 @@ function App() {
             try {
                 const rawValue = configRes[0].values[0][0];
                 const config = JSON.parse(rawValue);
-                
+
                 // Check if mappings is directly in config or nested
                 let loadedMappings;
                 if (config.mappings && typeof config.mappings === 'object') {
@@ -151,8 +151,8 @@ function App() {
                 } else if (config.ostale_vrste || Object.keys(config).some(key => !['mappings', 'column_roles', 'main_tables'].includes(key))) {
                     // If config has direct table keys, it might be the old format
                     // Extract all keys that are not metadata keys
-                    const tableKeys = Object.keys(config).filter(key => 
-                        !['mappings', 'column_roles', 'main_tables'].includes(key) && 
+                    const tableKeys = Object.keys(config).filter(key =>
+                        !['mappings', 'column_roles', 'main_tables'].includes(key) &&
                         typeof config[key] === 'object'
                     );
                     if (tableKeys.length > 0) {
@@ -171,7 +171,7 @@ function App() {
                 } else {
                     loadedMappings = config.mappings || DEFAULT_MAPPINGS;
                 }
-                
+
                 // Ensure mappings is an object, not null or undefined
                 if (loadedMappings && typeof loadedMappings === 'object') {
                     setMappings(loadedMappings);
@@ -231,7 +231,7 @@ function App() {
                     // Check if there are already queries in DB
                     const existingRes = database.exec("SELECT COUNT(*) as cnt FROM app_saved_queries");
                     const existingCount = existingRes.length > 0 ? existingRes[0].values[0][0] : 0;
-                    
+
                     if (existingCount === 0) {
                         // Migrate from localStorage to DB
                         const stmt = database.prepare("INSERT INTO app_saved_queries (name, sql, created_at) VALUES (?, ?, ?)");
@@ -444,7 +444,7 @@ function App() {
             stmt.run([editingQueryName.trim(), id]);
             stmt.free();
 
-            const updated = savedQueries.map(q => 
+            const updated = savedQueries.map(q =>
                 q.id === id ? { ...q, name: editingQueryName.trim() } : q
             );
             setSavedQueries(updated);
@@ -1002,6 +1002,20 @@ function App() {
                                 <button onClick={() => { setViewerTable(tbl); setActiveTab('viewer'); }} className="w-full py-2 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 text-sm font-medium">{t('dashboard.openInViewer')}</button>
                             </div>
                         ))}
+
+                        {/* New Table Box */}
+                        <div
+                            onClick={() => { setTargetTable("__NEW_TABLE__"); setActiveTab('import'); }}
+                            className="bg-gray-50 p-6 rounded-xl border-2 border-dashed border-gray-300 hover:border-blue-500 hover:bg-blue-50 transition cursor-pointer flex flex-col items-center justify-center min-h-[200px] group"
+                        >
+                            <div className="w-12 h-12 rounded-full bg-gray-200 group-hover:bg-blue-200 flex items-center justify-center mb-4 transition">
+                                <svg className="w-6 h-6 text-gray-500 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path>
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-bold text-gray-600 group-hover:text-blue-700">{t('import.newTable')}</h3>
+                            <p className="text-gray-400 text-sm mt-2 text-center">{t('import.importNewData')}</p>
+                        </div>
                     </div>
                 )}
 
@@ -1442,7 +1456,7 @@ function App() {
                                                     </div>
                                                 ) : (
                                                     <>
-                                                        <div 
+                                                        <div
                                                             className="font-medium text-sm text-gray-800 flex-1 truncate pr-2 cursor-pointer"
                                                             onClick={() => loadQuery(savedQuery)}
                                                         >

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import initSqlJs from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import Papa from 'papaparse';
+import jschardet from 'jschardet';
 import { DEFAULT_MAPPINGS, INITIAL_SCHEMA } from './constants';
 import DataTable from './components/DataTable';
 import EditRowModal from './components/EditRowModal';
@@ -600,7 +601,30 @@ function App() {
     const preprocessCsv = (file, callback) => {
         const reader = new FileReader();
         reader.onload = (e) => {
-            const text = e.target.result;
+            const buffer = new Uint8Array(e.target.result);
+            
+            // Izdvajamo deo fajla za detekciju enkodinga (prvih 50KB je sasvim dovoljno)
+            const chunk = buffer.slice(0, 50000);
+            let binaryString = "";
+            for (let i = 0; i < chunk.length; i++) {
+                binaryString += String.fromCharCode(chunk[i]);
+            }
+            
+            // Detektujemo enkoding koristeći jschardet
+            const detected = jschardet.detect(binaryString);
+            let encoding = detected && detected.encoding ? detected.encoding : 'utf-8';
+            
+            // TextDecoder ne prihvata uvek tačna imena koja vrati jschardet, pa hvatamo grešku za svaki slučaj
+            let text = "";
+            try {
+                const decoder = new TextDecoder(encoding);
+                text = decoder.decode(buffer);
+            } catch (err) {
+                console.warn(`TextDecoder failed for encoding: ${encoding}. Falling back to utf-8.`, err);
+                const decoder = new TextDecoder('utf-8');
+                text = decoder.decode(buffer);
+            }
+
             const lines = text.split(/\r?\n/);
 
             // Find the first line that looks like a CSV header
@@ -629,7 +653,7 @@ function App() {
             const blob = new Blob([cleanedCsv], { type: 'text/csv' });
             callback(blob);
         };
-        reader.readAsText(file);
+        reader.readAsArrayBuffer(file);
     };
     const processImport = (overrideTableName = null, overrideMappings = null) => {
         const tableToUse = overrideTableName || targetTable;
